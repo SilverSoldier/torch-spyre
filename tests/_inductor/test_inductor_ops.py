@@ -743,7 +743,7 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
         def fn(device=None):
             return torch.full(*args, dtype=torch.float16, device=device)
 
-        compare_with_cpu(fn, needs_device=True)
+        compare_with_cpu(fn, needs_device=True, cpu_compile=False)
 
 
 if __name__ == "__main__":
