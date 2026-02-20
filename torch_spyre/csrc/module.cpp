@@ -268,6 +268,7 @@ PYBIND11_MODULE(_C, m) {
   m.def("to_with_layout", &spyre::to_with_layout);
   m.def("empty_with_layout", &spyre::py_empty_with_layout);
   m.def("as_strided_with_layout", &spyre::as_strided_with_layout);
+  m.def("memory_allocated", &spyre::get_memory_allocated);
   m.def("spyre_reinterpret_tensor", &spyre::spyre_reinterpret_tensor);
 
   py::enum_<DataFormats>(m, "DataFormats")
