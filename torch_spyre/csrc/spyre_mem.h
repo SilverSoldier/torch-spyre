@@ -18,6 +18,9 @@
 
 #include <ATen/ATen.h>
 #include <c10/util/intrusive_ptr.h>
+#include <c10/core/Allocator.h>
+
+using namespace c10::CachingAllocator;
 
 namespace spyre {
 
@@ -57,4 +60,13 @@ at::Tensor as_strided_with_layout(const at::Tensor& self, c10::IntArrayRef size,
                                   std::optional<int64_t> storage_offset_,
                                   SpyreTensorLayout device_layout);
 
+
+size_t get_memory_allocated(std::optional<int> device_index);
+
 }  // namespace spyre
+
+
+struct DeviceStats {
+    StatArray allocation;
+    StatArray allocated_bytes;
+};

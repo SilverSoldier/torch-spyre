@@ -436,6 +436,8 @@ auto copy_device_to_host(const at::Tensor& self, const at::Tensor& dst) {
 // allocated memory not the actual pointer
 struct SpyreAllocator final : public at::Allocator {
  private:
+  DeviceStats stats;
+  StatTypes stat_types = {true, false, false}; // Setting AGGREGATE to True
   SpyreAllocator() = default;
   flex::DeviceMemoryAllocatorPtr getAllocator(unsigned int dev_id) {
     return GlobalRuntime::get()
@@ -468,6 +470,11 @@ struct SpyreAllocator final : public at::Allocator {
     void* ctx_void = static_cast<void*>(ctx);
 
     void* data_void = static_cast<void*>(ctx->owner.get());
+
+    for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
+      stats.allocation[stat_type].increase(1);
+      stats.allocated_bytes[stat_type].increase(nbytes);
+    });
 
     auto data_ptr_result =
         at::DataPtr(data_void, ctx_void, &ReportAndDelete, curr_device);
@@ -757,6 +764,16 @@ at::Tensor as_strided_with_layout(const at::Tensor& self, c10::IntArrayRef size,
   static_cast<SpyreTensorImpl*>(result.unsafeGetTensorImpl())->spyre_layout =
       device_layout;
   return result;
+}
+
+size_t get_memory_allocated(std::optional<int> device_index) {
+  auto device_id = device_index.value_or(
+        c10::impl::getDeviceGuardImpl(c10::DeviceType::PrivateUse1)
+            ->getDevice().index());
+
+  // Use later when we have multiple spyre devices
+
+  return SpyreAllocator::instance().getStats().allocated_bytes[0].current;
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
