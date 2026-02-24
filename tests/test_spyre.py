@@ -277,6 +277,23 @@ class TestSpyre(TestCase):
         dev = torch._C._get_accelerator()
         assert str(dev) == "spyre"
 
+    def test_memory_allocated(self):
+        import torch
+
+        x = torch.rand((64, 64), dtype=torch.float16)
+        assert x.device.type == "cpu", "initial device is not cpu"
+        self.assertEqual(torch.spyre.memory_allocated(), 0)
+
+        x = x.to("spyre")
+        assert x.device.type == "spyre", "to device is not spyre"
+        self.assertEqual(torch.spyre.memory_allocated(), 8192)
+
+        del x
+        self.assertEqual(torch.spyre.memory_allocated(), 0)
+
+        # Test max
+        self.assertEqual(torch.spyre.max_memory_allocated(), 8192)
+
 
 if __name__ == "__main__":
     run_tests()

@@ -27,6 +27,7 @@ namespace spyre {
 struct SharedOwnerCtx {
   flex::DeviceMemoryAllocationPtr owner;
   signed char device_id;
+  size_t nbytes;
 };
 
 class GlobalRuntime {
