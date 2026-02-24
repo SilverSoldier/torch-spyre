@@ -466,15 +466,12 @@ struct SpyreAllocator final : public at::Allocator {
     // NOTE: last argument should be set to 0
     allocator->TryAllocate(&data, nbytes, 0);
     TORCH_CHECK(data, "Failed to allocate ", nbytes, " bytes on Spyre device.");
-    auto* ctx = new SharedOwnerCtx{std::move(data), device_id};
+    auto* ctx = new SharedOwnerCtx{std::move(data), device_id, nbytes};
     void* ctx_void = static_cast<void*>(ctx);
 
     void* data_void = static_cast<void*>(ctx->owner.get());
 
-    for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
-      stats.allocation[stat_type].increase(1);
-      stats.allocated_bytes[stat_type].increase(nbytes);
-    });
+    record_alloc(nbytes);
 
     auto data_ptr_result =
         at::DataPtr(data_void, ctx_void, &ReportAndDelete, curr_device);
@@ -487,7 +484,11 @@ struct SpyreAllocator final : public at::Allocator {
       return;
     }
     auto* ctx = static_cast<SharedOwnerCtx*>(ctx_void);
+
+    size_t nbytes = ctx->nbytes;
     delete ctx;
+
+    SpyreAllocator::instance().record_free(nbytes);
   }
 
   // The raw deleter only gets passed the data ptr, no context, so
@@ -505,6 +506,20 @@ struct SpyreAllocator final : public at::Allocator {
     // do nothing -- look into when this is called
     // spyre_copy_from(reinterpret_cast<spyre_ptr_t>(dest),
     // reinterpret_cast<spyre_ptr_t>(src));
+  }
+
+  void record_alloc(size_t nbytes) {
+    for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
+      stats.allocation[stat_type].increase(1);
+      stats.allocated_bytes[stat_type].increase(nbytes);
+    });
+  }
+
+  void record_free(size_t nbytes) {
+    for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
+      stats.allocation[stat_type].decrease(1);
+      stats.allocated_bytes[stat_type].decrease(nbytes);
+    });
   }
 };
 
@@ -766,15 +781,11 @@ at::Tensor as_strided_with_layout(const at::Tensor& self, c10::IntArrayRef size,
   return result;
 }
 
-size_t get_memory_allocated(std::optional<int> device_index) {
-  auto device_id = device_index.value_or(
-        c10::impl::getDeviceGuardImpl(c10::DeviceType::PrivateUse1)
-            ->getDevice().index());
-
-  // Use later when we have multiple spyre devices
-
-  return SpyreAllocator::instance().getStats().allocated_bytes[0].current;
+const DeviceStats& get_stats(std::optional<int> device_index) const {
+  DeviceStats stats = SpyreAllocator::instance().getStats();
+  return stats;
 }
+
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("empty.memory_format", TORCH_FN(spyre_empty));

@@ -234,6 +234,39 @@ DataFormats get_device_dtype(c10::ScalarType torch_dtype) {
   return sen_dtype_dev;
 }
 
+py::dict get_memory_stats(std::optional<int> device_id) {
+    using c10::CachingAllocator::Stat;
+    using c10::CachingAllocator::StatArray;
+    using c10::CachingAllocator::StatType;
+    const auto statToDict = [](const Stat& stat) {
+      py::dict dict;
+
+      dict["current"] = stat.current;
+      dict["peak"] = stat.peak;
+      dict["allocated"] = stat.allocated;
+      dict["freed"] = stat.freed;
+      return dict;
+  };
+
+  const auto statArrayToDict = [=](const StatArray& statArray) {
+    const std::array<const char*, static_cast<size_t>(StatType::NUM_TYPES)>
+        statTypeNames = {"all", "small_pool", "large_pool"};
+    py::dict dict;
+    for (const auto i : c10::irange(statTypeNames.size())) {
+      dict[statTypeNames[i]] = statToDict(statArray[i]);
+    }
+    return dict;
+  };
+  auto stats = (DeviceStats) spyre::get_stats(device_id);
+
+  py::dict result;
+  result["allocation"] = statArrayToDict(stats.allocation);
+  result["allocated_bytes"] = statArrayToDict(stats.allocated_bytes);
+
+  return result;
+}
+
+
 }  // namespace spyre
 
 PYBIND11_MODULE(_C, m) {
@@ -269,7 +302,7 @@ PYBIND11_MODULE(_C, m) {
   m.def("to_with_layout", &spyre::to_with_layout);
   m.def("empty_with_layout", &spyre::py_empty_with_layout);
   m.def("as_strided_with_layout", &spyre::as_strided_with_layout);
-  m.def("memory_allocated", &spyre::get_memory_allocated);
+  m.def("memory_stats", &spyre::get_memory_stats);
 
   py::enum_<DataFormats>(m, "DataFormats")
       .value("SEN169_FP16", DataFormats::SEN169_FP16)

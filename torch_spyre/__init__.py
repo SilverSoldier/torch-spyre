@@ -17,9 +17,9 @@ import threading
 import types
 import importlib
 from .constants import DEVICE_NAME
+from .memory import *
 
 _runtime_init_lock = threading.Lock()
-
 
 class _SpyreImpl:
     def __init__(self):
@@ -130,6 +130,8 @@ def make_spyre_module() -> types.ModuleType:
     mod.current_device = lambda: impl.current_device()
     mod.set_device = lambda idx: impl.set_device(idx)
     mod._is_compiled = lambda: True
+    mod.memory_allocated = memory_allocated
+    mod.max_memory_allocated = max_memory_allocated
 
     # Optional: forward unknown attrs to the impl or _C for convenience
     def __getattr__(name):

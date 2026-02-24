@@ -22,6 +22,11 @@
 
 using namespace c10::CachingAllocator;
 
+struct DeviceStats {
+    StatArray allocation;
+    StatArray allocated_bytes;
+};
+
 namespace spyre {
 
 at::Tensor spyre_empty_strided(c10::IntArrayRef size, c10::IntArrayRef stride,
@@ -61,12 +66,6 @@ at::Tensor as_strided_with_layout(const at::Tensor& self, c10::IntArrayRef size,
                                   SpyreTensorLayout device_layout);
 
 
-size_t get_memory_allocated(std::optional<int> device_index);
+::DeviceStats& get_stats(std::optional<int> device_index);
 
 }  // namespace spyre
-
-
-struct DeviceStats {
-    StatArray allocation;
-    StatArray allocated_bytes;
-};
