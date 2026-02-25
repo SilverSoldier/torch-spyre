@@ -279,20 +279,28 @@ class TestSpyre(TestCase):
 
     def test_memory_allocated(self):
         import torch
+        torch.spyre.reset_peak_memory_stats()
+        torch.spyre.reset_accumulated_memory_stats()
 
+        prev_allocated = torch.spyre.memory_allocated()
+        prev_max_allocated = torch.spyre.max_memory_allocated()
+
+        self.assertEqual(prev_allocated, prev_max_allocated) # Due to reset_peak_memory_stats
         x = torch.rand((64, 64), dtype=torch.float16)
         assert x.device.type == "cpu", "initial device is not cpu"
         self.assertEqual(torch.spyre.memory_allocated(), 0)
 
         x = x.to("spyre")
         assert x.device.type == "spyre", "to device is not spyre"
-        self.assertEqual(torch.spyre.memory_allocated(), 8192)
+        self.assertEqual(torch.spyre.memory_allocated(), 8192 + prev_allocated)
 
+        import gc
         del x
-        self.assertEqual(torch.spyre.memory_allocated(), 0)
+        gc.collect()
+        self.assertEqual(torch.spyre.memory_allocated(), prev_allocated)
 
         # Test max
-        self.assertEqual(torch.spyre.max_memory_allocated(), 8192)
+        self.assertEqual(torch.spyre.max_memory_allocated(), prev_max_allocated + 8192)
 
 
 if __name__ == "__main__":
