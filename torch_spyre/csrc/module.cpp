@@ -265,8 +265,6 @@ py::dict get_memory_stats(std::optional<int> device_id) {
 
   return result;
 }
-
-
 }  // namespace spyre
 
 PYBIND11_MODULE(_C, m) {
@@ -303,6 +301,8 @@ PYBIND11_MODULE(_C, m) {
   m.def("empty_with_layout", &spyre::py_empty_with_layout);
   m.def("as_strided_with_layout", &spyre::as_strided_with_layout);
   m.def("memory_stats", &spyre::get_memory_stats);
+  m.def("reset_accumulated_memory_stats", &spyre::reset_accumulated_stats);
+  m.def("reset_peak_memory_stats", &spyre::reset_peak_stats);
 
   py::enum_<DataFormats>(m, "DataFormats")
       .value("SEN169_FP16", DataFormats::SEN169_FP16)

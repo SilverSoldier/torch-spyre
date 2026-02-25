@@ -66,6 +66,10 @@ at::Tensor as_strided_with_layout(const at::Tensor& self, c10::IntArrayRef size,
                                   SpyreTensorLayout device_layout);
 
 
-::DeviceStats& get_stats(std::optional<int> device_index);
+const ::DeviceStats& get_stats(std::optional<int> device_index);
+
+void reset_peak_stats(std::optional<int> device_index);
+
+void reset_accumulated_stats(std::optional<int> device_index);
 
 }  // namespace spyre

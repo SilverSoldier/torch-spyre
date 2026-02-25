@@ -451,6 +451,10 @@ struct SpyreAllocator final : public at::Allocator {
     return allocator;
   }
 
+  const DeviceStats& getStats() const {
+      return stats;
+  }
+
   at::DataPtr allocate(size_t nbytes) override {
     c10::Device curr_device =
         c10::impl::getDeviceGuardImpl(c10::DeviceType::PrivateUse1)
@@ -471,7 +475,7 @@ struct SpyreAllocator final : public at::Allocator {
 
     void* data_void = static_cast<void*>(ctx->owner.get());
 
-    record_alloc(nbytes);
+    recordAlloc(nbytes);
 
     auto data_ptr_result =
         at::DataPtr(data_void, ctx_void, &ReportAndDelete, curr_device);
@@ -488,7 +492,7 @@ struct SpyreAllocator final : public at::Allocator {
     size_t nbytes = ctx->nbytes;
     delete ctx;
 
-    SpyreAllocator::instance().record_free(nbytes);
+    SpyreAllocator::instance().recordFree(nbytes);
   }
 
   // The raw deleter only gets passed the data ptr, no context, so
@@ -508,17 +512,31 @@ struct SpyreAllocator final : public at::Allocator {
     // reinterpret_cast<spyre_ptr_t>(src));
   }
 
-  void record_alloc(size_t nbytes) {
+  void recordAlloc(size_t nbytes) {
     for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
       stats.allocation[stat_type].increase(1);
       stats.allocated_bytes[stat_type].increase(nbytes);
     });
   }
 
-  void record_free(size_t nbytes) {
+  void recordFree(size_t nbytes) {
     for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
       stats.allocation[stat_type].decrease(1);
       stats.allocated_bytes[stat_type].decrease(nbytes);
+    });
+  }
+
+  void resetPeakStats(std::optional<int> device_index) {
+    for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
+      stats.allocated_bytes[stat_type].reset_peak();
+      stats.allocation[stat_type].reset_peak();
+    });
+  }
+
+  void resetAccumulatedStats(std::optional<int> device_index) {
+    for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
+      stats.allocated_bytes[stat_type].reset_accumulated();
+      stats.allocation[stat_type].reset_accumulated();
     });
   }
 };
@@ -781,9 +799,16 @@ at::Tensor as_strided_with_layout(const at::Tensor& self, c10::IntArrayRef size,
   return result;
 }
 
-const DeviceStats& get_stats(std::optional<int> device_index) const {
-  DeviceStats stats = SpyreAllocator::instance().getStats();
-  return stats;
+const DeviceStats& get_stats(std::optional<int> device_index) {
+  return SpyreAllocator::instance().getStats();
+}
+
+void reset_peak_stats(std::optional<int> device_index) {
+  SpyreAllocator::instance().resetPeakStats(device_index);
+}
+
+void reset_accumulated_stats(std::optional<int> device_index) {
+  SpyreAllocator::instance().resetAccumulatedStats(device_index);
 }
 
 
