@@ -800,17 +800,19 @@ at::Tensor as_strided_with_layout(const at::Tensor& self, c10::IntArrayRef size,
 }
 
 const DeviceStats& get_stats(std::optional<int> device_index) {
+  // TODO: use device_index for multi-device
   return SpyreAllocator::instance().getStats();
 }
 
 void reset_peak_stats(std::optional<int> device_index) {
+  // TODO: use device_index for multi-device
   SpyreAllocator::instance().resetPeakStats(device_index);
 }
 
 void reset_accumulated_stats(std::optional<int> device_index) {
+  // TODO: use device_index for multi-device
   SpyreAllocator::instance().resetAccumulatedStats(device_index);
 }
-
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("empty.memory_format", TORCH_FN(spyre_empty));
