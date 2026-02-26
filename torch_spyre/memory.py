@@ -5,9 +5,10 @@ __all__ = [
     "memory_allocated",
     "max_memory_allocated",
     "reset_peak_memory_stats",
-    "reset_accumulated_memory_stats"
+    "reset_accumulated_memory_stats",
+    "memory_stats",
+    "memory_stats_as_nested_dict"
 ]
-
 
 def memory_allocated(device: int | None = None) -> int:
     return memory_stats(device=device).get("allocated_bytes.all.current", 0)
@@ -17,11 +18,11 @@ def max_memory_allocated(device: int | None = None) -> int:
 
 def reset_peak_memory_stats(device: int | None = None) -> None:
     import torch_spyre._C as _C
-    return _C.reset_peak_memory_stats(device)
+    _C.reset_peak_memory_stats(device)
 
 def reset_accumulated_memory_stats(device: int | None = None) -> None:
     import torch_spyre._C as _C
-    return _C.reset_accumulated_memory_stats(device)
+    _C.reset_accumulated_memory_stats(device)
 
 def memory_stats(device: int | None = None) -> dict[str, Any]:
     r"""Return a dictionary of Spyre memory allocator statistics for a given device.

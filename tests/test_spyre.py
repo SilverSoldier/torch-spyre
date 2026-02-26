@@ -287,11 +287,11 @@ class TestSpyre(TestCase):
 
         self.assertEqual(prev_allocated, prev_max_allocated) # Due to reset_peak_memory_stats
         x = torch.rand((64, 64), dtype=torch.float16)
-        assert x.device.type == "cpu", "initial device is not cpu"
-        self.assertEqual(torch.spyre.memory_allocated(), 0)
+        self.assertEqual(x.device.type, "cpu")
+        self.assertEqual(torch.spyre.memory_allocated(), prev_allocated)
 
         x = x.to("spyre")
-        assert x.device.type == "spyre", "to device is not spyre"
+        self.assertEqual(x.device.type, "spyre")
         self.assertEqual(torch.spyre.memory_allocated(), 8192 + prev_allocated)
 
         import gc
