@@ -294,9 +294,7 @@ class TestSpyre(TestCase):
         self.assertEqual(x.device.type, "spyre")
         self.assertEqual(torch.spyre.memory_allocated(), 8192 + prev_allocated)
 
-        import gc
         del x
-        gc.collect()
         self.assertEqual(torch.spyre.memory_allocated(), prev_allocated)
 
         # Test max

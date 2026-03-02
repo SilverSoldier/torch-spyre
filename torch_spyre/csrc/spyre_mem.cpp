@@ -438,7 +438,8 @@ auto copy_device_to_host(const at::Tensor& self, const at::Tensor& dst) {
 struct SpyreAllocator final : public at::Allocator {
  private:
   DeviceStats stats;
-  StatTypes stat_types = {true, false, false}; // Setting AGGREGATE to True
+  StatTypes stat_types = {true, false,
+                          false};  // {AGGREGATE, SMALL_POOL, LARGE_POOL}
   SpyreAllocator() = default;
   flex::DeviceMemoryAllocatorPtr getAllocator(unsigned int dev_id) {
     return GlobalRuntime::get()
@@ -453,7 +454,7 @@ struct SpyreAllocator final : public at::Allocator {
   }
 
   const DeviceStats& getStats() const {
-      return stats;
+    return stats;
   }
 
   at::DataPtr allocate(size_t nbytes) override {
@@ -476,7 +477,7 @@ struct SpyreAllocator final : public at::Allocator {
 
     void* data_void = static_cast<void*>(ctx->owner.get());
 
-    recordAlloc(nbytes);
+    record_alloc(nbytes);
 
     auto data_ptr_result =
         at::DataPtr(data_void, ctx_void, &ReportAndDelete, curr_device);
@@ -493,7 +494,7 @@ struct SpyreAllocator final : public at::Allocator {
     size_t nbytes = ctx->nbytes;
     delete ctx;
 
-    SpyreAllocator::instance().recordFree(nbytes);
+    SpyreAllocator::instance().record_free(nbytes);
   }
 
   // The raw deleter only gets passed the data ptr, no context, so
@@ -513,28 +514,28 @@ struct SpyreAllocator final : public at::Allocator {
     // reinterpret_cast<spyre_ptr_t>(src));
   }
 
-  void recordAlloc(size_t nbytes) {
+  void record_alloc(size_t nbytes) {
     for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
       stats.allocation[stat_type].increase(1);
       stats.allocated_bytes[stat_type].increase(nbytes);
     });
   }
 
-  void recordFree(size_t nbytes) {
+  void record_free(size_t nbytes) {
     for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
       stats.allocation[stat_type].decrease(1);
       stats.allocated_bytes[stat_type].decrease(nbytes);
     });
   }
 
-  void resetPeakStats(std::optional<int> device_index) {
+  void reset_peak_stats(std::optional<int> device_index) {
     for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
       stats.allocated_bytes[stat_type].reset_peak();
       stats.allocation[stat_type].reset_peak();
     });
   }
 
-  void resetAccumulatedStats(std::optional<int> device_index) {
+  void reset_accumulated_stats(std::optional<int> device_index) {
     for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
       stats.allocated_bytes[stat_type].reset_accumulated();
       stats.allocation[stat_type].reset_accumulated();
@@ -801,18 +802,18 @@ at::Tensor as_strided_with_layout(const at::Tensor& self, c10::IntArrayRef size,
 }
 
 const DeviceStats& get_stats(std::optional<int> device_index) {
-  // TODO: use device_index for multi-device
+  // TODO(kavya): use device_index for multi-device
   return SpyreAllocator::instance().getStats();
 }
 
 void reset_peak_stats(std::optional<int> device_index) {
-  // TODO: use device_index for multi-device
-  SpyreAllocator::instance().resetPeakStats(device_index);
+  // TODO(kavya): use device_index for multi-device
+  SpyreAllocator::instance().reset_peak_stats(device_index);
 }
 
 void reset_accumulated_stats(std::optional<int> device_index) {
-  // TODO: use device_index for multi-device
-  SpyreAllocator::instance().resetAccumulatedStats(device_index);
+  // TODO(kavya): use device_index for multi-device
+  SpyreAllocator::instance().reset_accumulated_stats(device_index);
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {

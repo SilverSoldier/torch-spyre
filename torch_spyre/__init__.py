@@ -17,7 +17,7 @@ import threading
 import types
 import importlib
 from .constants import DEVICE_NAME
-from .memory import *
+from .memory import memory_allocated, max_memory_allocated, reset_accumulated_memory_stats, reset_peak_memory_stats
 
 _runtime_init_lock = threading.Lock()
 
