@@ -17,9 +17,15 @@ import threading
 import types
 import importlib
 from .constants import DEVICE_NAME
-from .memory import memory_allocated, max_memory_allocated, reset_accumulated_memory_stats, reset_peak_memory_stats
+from .memory import (
+    memory_allocated,
+    max_memory_allocated,
+    reset_accumulated_memory_stats,
+    reset_peak_memory_stats,
+)
 
 _runtime_init_lock = threading.Lock()
+
 
 class _SpyreImpl:
     def __init__(self):
@@ -196,4 +202,3 @@ def _autoload():
     os.environ.setdefault("TORCH_SENDNN_LOG", "CRITICAL")
     os.environ.setdefault("DT_DEEPRT_VERBOSE", "-1")
     os.environ.setdefault("DTLOG_LEVEL", "error")
-    

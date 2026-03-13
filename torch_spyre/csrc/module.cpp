@@ -238,7 +238,7 @@ py::dict get_memory_stats(std::optional<int> device_id) {
   using c10::CachingAllocator::Stat;
   using c10::CachingAllocator::StatArray;
   using c10::CachingAllocator::StatType;
-  const auto statToDict = [](const Stat& stat) {
+  const auto statToDict = [](const Stat &stat) {
     py::dict dict;
     dict["current"] = stat.current;
     dict["peak"] = stat.peak;
@@ -247,15 +247,16 @@ py::dict get_memory_stats(std::optional<int> device_id) {
     return dict;
   };
 
-  const auto statArrayToDict = [=](const StatArray& statArray) {
-    const std::array<const char*, static_cast<size_t>(1)> statTypeNames = {"all"};
+  const auto statArrayToDict = [=](const StatArray &statArray) {
+    const std::array<const char *, static_cast<size_t>(1)> statTypeNames = {
+        "all"};
     py::dict dict;
     for (const auto i : c10::irange(statTypeNames.size())) {
       dict[statTypeNames[i]] = statToDict(statArray[i]);
     }
     return dict;
   };
-  const auto& stats = spyre::get_stats(device_id);
+  const auto &stats = spyre::get_stats(device_id);
 
   py::dict result;
   result["allocation"] = statArrayToDict(stats.allocation);

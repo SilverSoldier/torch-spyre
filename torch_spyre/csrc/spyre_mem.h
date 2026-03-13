@@ -17,14 +17,14 @@
 #pragma once
 
 #include <ATen/ATen.h>
-#include <c10/util/intrusive_ptr.h>
 #include <c10/core/Allocator.h>
+#include <c10/util/intrusive_ptr.h>
 
 using namespace c10::CachingAllocator;
 
 struct DeviceStats {
-    StatArray allocation;
-    StatArray allocated_bytes;
+  StatArray allocation;
+  StatArray allocated_bytes;
 };
 
 namespace spyre {
@@ -64,7 +64,6 @@ at::Tensor as_strided_with_layout(const at::Tensor& self, c10::IntArrayRef size,
                                   c10::IntArrayRef stride,
                                   std::optional<int64_t> storage_offset_,
                                   SpyreTensorLayout device_layout);
-
 
 const ::DeviceStats& get_stats(std::optional<int> device_index);
 

@@ -7,22 +7,29 @@ __all__ = [
     "reset_peak_memory_stats",
     "reset_accumulated_memory_stats",
     "memory_stats",
-    "memory_stats_as_nested_dict"
+    "memory_stats_as_nested_dict",
 ]
+
 
 def memory_allocated(device: int | None = None) -> int:
     return memory_stats(device=device).get("allocated_bytes.all.current", 0)
 
+
 def max_memory_allocated(device: int | None = None) -> int:
     return memory_stats(device=device).get("allocated_bytes.all.peak", 0)
 
+
 def reset_peak_memory_stats(device: int | None = None) -> None:
     import torch_spyre._C as _C
+
     _C.reset_peak_memory_stats(device)
+
 
 def reset_accumulated_memory_stats(device: int | None = None) -> None:
     import torch_spyre._C as _C
+
     _C.reset_accumulated_memory_stats(device)
+
 
 def memory_stats(device: int | None = None) -> dict[str, Any]:
     r"""Return a dictionary of Spyre memory allocator statistics for a given device.
@@ -66,8 +73,9 @@ def memory_stats(device: int | None = None) -> dict[str, Any]:
 
     return collections.OrderedDict(result)
 
+
 def memory_stats_as_nested_dict(device: int | None = None) -> dict[str, Any]:
     r"""Return the result of :func:`~torch.spyre.memory_stats` as a nested dictionary."""
     import torch_spyre._C as _C
-    return _C.memory_stats(device)
 
+    return _C.memory_stats(device)
