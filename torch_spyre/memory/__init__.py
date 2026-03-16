@@ -12,3 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .memory import (
+    memory_allocated,
+    max_memory_allocated,
+    reset_peak_memory_stats,
+    reset_accumulated_memory_stats,
+    memory_stats,
+    memory_stats_as_nested_dict,
+)
+
+__all__ = [
+    "memory_allocated",
+    "max_memory_allocated",
+    "reset_peak_memory_stats",
+    "reset_accumulated_memory_stats",
+    "memory_stats",
+    "memory_stats_as_nested_dict",
+]

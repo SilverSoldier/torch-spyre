@@ -243,15 +243,6 @@ bool is_supported_dtype(c10::ScalarType dtype) {
          elems_per_stick(sen_dtype_dev) > 0;
 }
 
-bool is_supported_dtype(c10::ScalarType dtype) {
-  // TODO(kmehant,yoheiueda): Replace this heuristic with a reliable method to
-  // determine supported dtypes. Using elems_per_stick can miss certain
-  // unsupported dtypes. See #950
-  DataFormats sen_dtype_dev = get_device_dtype(dtype);
-  return sen_dtype_dev != DataFormats::INVALID &&
-         elems_per_stick(sen_dtype_dev) > 0;
-}
-
 py::dict get_memory_stats(std::optional<int> device_id) {
   using c10::CachingAllocator::Stat;
   using c10::CachingAllocator::StatArray;

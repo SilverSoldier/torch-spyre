@@ -20,11 +20,9 @@
 #include <c10/core/Allocator.h>
 #include <c10/util/intrusive_ptr.h>
 
-using c10::CachingAllocator;
-
 struct DeviceStats {
-  StatArray allocation;
-  StatArray allocated_bytes;
+  c10::CachingAllocator::StatArray allocation;
+  c10::CachingAllocator::StatArray allocated_bytes;
 };
 
 namespace spyre {

@@ -455,8 +455,8 @@ auto copy_device_to_host(const at::Tensor& self, const at::Tensor& dst) {
 struct SpyreAllocator final : public at::Allocator {
  private:
   DeviceStats stats;
-  StatTypes stat_types = {true, false,
-                          false};  // {AGGREGATE, SMALL_POOL, LARGE_POOL}
+  c10::CachingAllocator::StatTypes stat_types = {
+      true, false, false};  // {AGGREGATE, SMALL_POOL, LARGE_POOL}
   SpyreAllocator() = default;
   flex::DeviceMemoryAllocatorPtr getAllocator(unsigned int dev_id) {
     return GlobalRuntime::get()
@@ -532,31 +532,35 @@ struct SpyreAllocator final : public at::Allocator {
   }
 
   void record_alloc(size_t nbytes) {
-    for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
-      stats.allocation[stat_type].increase(1);
-      stats.allocated_bytes[stat_type].increase(nbytes);
-    });
+    c10::CachingAllocator::for_each_selected_stat_type(
+        stat_types, [&](size_t stat_type) {
+          stats.allocation[stat_type].increase(1);
+          stats.allocated_bytes[stat_type].increase(nbytes);
+        });
   }
 
   void record_free(size_t nbytes) {
-    for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
-      stats.allocation[stat_type].decrease(1);
-      stats.allocated_bytes[stat_type].decrease(nbytes);
-    });
+    c10::CachingAllocator::for_each_selected_stat_type(
+        stat_types, [&](size_t stat_type) {
+          stats.allocation[stat_type].decrease(1);
+          stats.allocated_bytes[stat_type].decrease(nbytes);
+        });
   }
 
   void reset_peak_stats(std::optional<int> device_index) {
-    for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
-      stats.allocated_bytes[stat_type].reset_peak();
-      stats.allocation[stat_type].reset_peak();
-    });
+    c10::CachingAllocator::for_each_selected_stat_type(
+        stat_types, [&](size_t stat_type) {
+          stats.allocated_bytes[stat_type].reset_peak();
+          stats.allocation[stat_type].reset_peak();
+        });
   }
 
   void reset_accumulated_stats(std::optional<int> device_index) {
-    for_each_selected_stat_type(stat_types, [&](size_t stat_type) {
-      stats.allocated_bytes[stat_type].reset_accumulated();
-      stats.allocation[stat_type].reset_accumulated();
-    });
+    c10::CachingAllocator::for_each_selected_stat_type(
+        stat_types, [&](size_t stat_type) {
+          stats.allocated_bytes[stat_type].reset_accumulated();
+          stats.allocation[stat_type].reset_accumulated();
+        });
   }
 };
 
