@@ -20,7 +20,7 @@
 #include <c10/core/Allocator.h>
 #include <c10/util/intrusive_ptr.h>
 
-using namespace c10::CachingAllocator;
+using c10::CachingAllocator;
 
 struct DeviceStats {
   StatArray allocation;
