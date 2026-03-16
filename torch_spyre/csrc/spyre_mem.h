@@ -60,11 +60,6 @@ at::Tensor py_empty_with_layout(
     std::optional<c10::Device> device_opt, std::optional<bool> pin_memory_opt,
     std::optional<c10::MemoryFormat> memory_format_opt);
 
-at::Tensor as_strided_with_layout(const at::Tensor& self, c10::IntArrayRef size,
-                                  c10::IntArrayRef stride,
-                                  std::optional<int64_t> storage_offset_,
-                                  SpyreTensorLayout device_layout);
-
 const ::DeviceStats& get_stats(std::optional<int> device_index);
 
 void reset_peak_stats(std::optional<int> device_index);
