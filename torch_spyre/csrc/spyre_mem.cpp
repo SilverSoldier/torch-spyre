@@ -489,12 +489,13 @@ struct SpyreAllocator final : public at::Allocator {
     // NOTE: last argument should be set to 0
     allocator->TryAllocate(&data, nbytes, 0);
     TORCH_CHECK(data, "Failed to allocate ", nbytes, " bytes on Spyre device.");
-    auto* ctx = new SharedOwnerCtx{std::move(data), device_id, nbytes};
+    auto* ctx =
+        new SharedOwnerCtx{std::move(data), device_id, nbytes, curr_device};
     void* ctx_void = static_cast<void*>(ctx);
 
     void* data_void = static_cast<void*>(ctx->owner.get());
 
-    record_alloc(nbytes);
+    record_alloc(nbytes, data_void, curr_device);
 
     auto data_ptr_result =
         at::DataPtr(data_void, ctx_void, &ReportAndDelete, curr_device);
@@ -509,9 +510,11 @@ struct SpyreAllocator final : public at::Allocator {
     auto* ctx = static_cast<SharedOwnerCtx*>(ctx_void);
 
     size_t nbytes = ctx->nbytes;
-    delete ctx;
+    c10::Device device = ctx->device;
 
-    SpyreAllocator::instance().record_free(nbytes);
+    SpyreAllocator::instance().record_release(
+        nbytes, static_cast<void*>(ctx->owner.get()), device);
+    delete ctx;
   }
 
   // The raw deleter only gets passed the data ptr, no context, so
@@ -531,20 +534,46 @@ struct SpyreAllocator final : public at::Allocator {
     // reinterpret_cast<spyre_ptr_t>(src));
   }
 
-  void record_alloc(size_t nbytes) {
+  void record_alloc(size_t nbytes, void* data, c10::Device curr_device) {
     c10::CachingAllocator::for_each_selected_stat_type(
         stat_types, [&](size_t stat_type) {
           stats.allocation[stat_type].increase(1);
           stats.allocated_bytes[stat_type].increase(nbytes);
         });
+
+    c10::reportMemoryUsageToProfiler(
+        &data,
+        nbytes,  // alloc_size
+        stats
+            .allocated_bytes[static_cast<size_t>(
+                c10::CachingAllocator::StatType::AGGREGATE)]
+            .current,  // total_allocated
+        stats
+            .allocated_bytes[static_cast<size_t>(
+                c10::CachingAllocator::StatType::AGGREGATE)]
+            .current,  // total_reserved (currently same as total_allocated)
+        curr_device);
   }
 
-  void record_free(size_t nbytes) {
+  void record_release(size_t nbytes, void* data, c10::Device curr_device) {
     c10::CachingAllocator::for_each_selected_stat_type(
         stat_types, [&](size_t stat_type) {
           stats.allocation[stat_type].decrease(1);
           stats.allocated_bytes[stat_type].decrease(nbytes);
         });
+
+    c10::reportMemoryUsageToProfiler(
+        &data,
+        -nbytes,  // alloc_size
+        stats
+            .allocated_bytes[static_cast<size_t>(
+                c10::CachingAllocator::StatType::AGGREGATE)]
+            .current,  // total_allocated
+        stats
+            .allocated_bytes[static_cast<size_t>(
+                c10::CachingAllocator::StatType::AGGREGATE)]
+            .current,  // total_reserved (currently same as total_allocated)
+        curr_device);
   }
 
   void reset_peak_stats(std::optional<int> device_index) {

@@ -17,13 +17,9 @@
 #pragma once
 
 #include <ATen/ATen.h>
-#include <c10/core/Allocator.h>
 #include <c10/util/intrusive_ptr.h>
 
-struct DeviceStats {
-  c10::CachingAllocator::StatArray allocation;
-  c10::CachingAllocator::StatArray allocated_bytes;
-};
+#include "spyre_mem_stat.h"
 
 namespace spyre {
 
@@ -57,11 +53,5 @@ at::Tensor py_empty_with_layout(
     std::optional<c10::ScalarType> dtype_opt,
     std::optional<c10::Device> device_opt, std::optional<bool> pin_memory_opt,
     std::optional<c10::MemoryFormat> memory_format_opt);
-
-const ::DeviceStats& get_stats(std::optional<int> device_index);
-
-void reset_peak_stats(std::optional<int> device_index);
-
-void reset_accumulated_stats(std::optional<int> device_index);
 
 }  // namespace spyre
