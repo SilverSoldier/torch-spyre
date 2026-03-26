@@ -20,7 +20,6 @@
 #include <ATen/detail/PrivateUse1HooksInterface.h>
 #include <ATen/native/Resize.h>
 #include <ATen/ops/set_cpu_dispatch.h>
-#include <c10/core/Allocator.h>
 #include <c10/core/MemoryFormat.h>
 #include <c10/core/TensorOptions.h>
 #include <c10/util/ArrayRef.h>
@@ -28,7 +27,6 @@
 #include <util/sen_data_convert.h>
 
 #include <algorithm>
-#include <cassert>
 #include <flex/graph/graph_builder/flex_graph_builder.hpp>
 #include <memory>
 #include <sendnn/graph/graph_builder.hpp>
@@ -42,6 +40,7 @@
 
 #include "logging.h"
 #include "module.h"
+#include "spyre_allocator.h"
 #include "spyre_sendnn_utils.h"
 #include "spyre_storage_impl.h"
 #include "spyre_tensor_impl.h"
@@ -449,152 +448,6 @@ auto copy_device_to_host(const at::Tensor& self, const at::Tensor& dst) {
   out_tensor.SetSpyreData(ctx->owner);
   SEN_THROW_NOK(gl->Copy({out_tensor}, sendnn::Inputs(), sn_idx));
 }
-
-// A custom allocator for our custom device, what returns is a handle to the
-// allocated memory not the actual pointer
-struct SpyreAllocator final : public at::Allocator {
- private:
-  DeviceStats stats_;
-  c10::CachingAllocator::StatTypes stat_types = {
-      true, false, false};  // {AGGREGATE, SMALL_POOL, LARGE_POOL}
-  SpyreAllocator() = default;
-  flex::DeviceMemoryAllocatorPtr getAllocator(unsigned int dev_id) {
-    return GlobalRuntime::get()
-        ->GetDeviceHandle(dev_id)
-        ->GetDeviceMemoryAllocator();
-  }
-
- public:
-  static SpyreAllocator& instance() {
-    static SpyreAllocator allocator;
-    return allocator;
-  }
-
-  const DeviceStats& getStats() const {
-    return stats_;
-  }
-
-  at::DataPtr allocate(size_t nbytes) override {
-    c10::Device curr_device =
-        c10::impl::getDeviceGuardImpl(c10::DeviceType::PrivateUse1)
-            ->getDevice();
-
-    auto device_id = curr_device.index();
-    DEBUGINFO("allocating ", nbytes, " (bytes) on Spyre", curr_device);
-    if (nbytes <= 0) {
-      return {nullptr, nullptr, &ReportAndDelete, curr_device};
-    }
-    auto allocator = getAllocator(device_id);
-    flex::DeviceMemoryAllocationPtr data;  // a smart-pointer object
-    // NOTE: last argument should be set to 0
-    allocator->TryAllocate(&data, nbytes, 0);
-    TORCH_CHECK(data, "Failed to allocate ", nbytes, " bytes on Spyre device.");
-    auto* ctx = new SharedOwnerCtx{std::move(data), device_id, nbytes};
-    void* ctx_void = static_cast<void*>(ctx);
-
-    void* data_void = static_cast<void*>(ctx->owner.get());
-
-    record_alloc(nbytes, data_void, device_id);
-
-    auto data_ptr_result =
-        at::DataPtr(data_void, ctx_void, &ReportAndDelete, curr_device);
-
-    return data_ptr_result;
-  }
-
-  static void ReportAndDelete(void* ctx_void) {
-    if (!ctx_void) {
-      return;
-    }
-    auto* ctx = static_cast<SharedOwnerCtx*>(ctx_void);
-    size_t nbytes = ctx->nbytes;
-
-    SpyreAllocator::instance().record_release(
-        nbytes, static_cast<void*>(ctx->owner.get()), ctx->device_id);
-    delete ctx;
-  }
-
-  // The raw deleter only gets passed the data ptr, no context, so
-  // it would not work right now. To implement this, we first need to
-  // create a runtime interface that can correctly free an allocation
-  // only based on the data ptr, without the allocation idx from the
-  // context
-  at::DeleterFnPtr raw_deleter() const override {
-    return nullptr;
-  }
-
-  void copy_data(void* dest, const void* src, std::size_t count) const final {
-    py::gil_scoped_acquire acquire;
-    DEBUGINFO("entering allocator->copy_data method");
-    // do nothing -- look into when this is called
-    // spyre_copy_from(reinterpret_cast<spyre_ptr_t>(dest),
-    // reinterpret_cast<spyre_ptr_t>(src));
-  }
-
-  void record_alloc(size_t nbytes, void* data, int device_id) {
-    c10::CachingAllocator::for_each_selected_stat_type(
-        stat_types, [&](size_t stat_type) {
-          stats_.allocation[stat_type].increase(1);
-          stats_.allocated_bytes[stat_type].increase(nbytes);
-        });
-
-    c10::Device curr_device =
-        c10::Device(c10::DeviceType::PrivateUse1, device_id);
-    c10::reportMemoryUsageToProfiler(
-        &data,
-        nbytes,  // alloc_size
-        stats_
-            .allocated_bytes[static_cast<size_t>(
-                c10::CachingAllocator::StatType::AGGREGATE)]
-            .current,  // total_allocated
-        stats_
-            .allocated_bytes[static_cast<size_t>(
-                c10::CachingAllocator::StatType::AGGREGATE)]
-            .current,  // total_reserved (currently same as total_allocated)
-        curr_device);
-  }
-
-  void record_release(size_t nbytes, void* data, int device_id) {
-    c10::CachingAllocator::for_each_selected_stat_type(
-        stat_types, [&](size_t stat_type) {
-          stats_.allocation[stat_type].decrease(1);
-          stats_.allocated_bytes[stat_type].decrease(nbytes);
-        });
-    c10::Device curr_device =
-        c10::Device(c10::DeviceType::PrivateUse1, device_id);
-    c10::reportMemoryUsageToProfiler(
-        &data,
-        -nbytes,  // alloc_size
-        stats_
-            .allocated_bytes[static_cast<size_t>(
-                c10::CachingAllocator::StatType::AGGREGATE)]
-            .current,  // total_allocated
-        stats_
-            .allocated_bytes[static_cast<size_t>(
-                c10::CachingAllocator::StatType::AGGREGATE)]
-            .current,  // total_reserved (currently same as total_allocated)
-        curr_device);
-  }
-
-  void reset_peak_stats(std::optional<int> device_index) {
-    c10::CachingAllocator::for_each_selected_stat_type(
-        stat_types, [&](size_t stat_type) {
-          stats_.allocated_bytes[stat_type].reset_peak();
-          stats_.allocation[stat_type].reset_peak();
-        });
-  }
-
-  void reset_accumulated_stats(std::optional<int> device_index) {
-    c10::CachingAllocator::for_each_selected_stat_type(
-        stat_types, [&](size_t stat_type) {
-          stats_.allocated_bytes[stat_type].reset_accumulated();
-          stats_.allocation[stat_type].reset_accumulated();
-        });
-  }
-};
-
-// Register our custom allocator
-REGISTER_ALLOCATOR(c10::DeviceType::PrivateUse1, &SpyreAllocator::instance());
 
 // Empty op needs C++ code and cannot be handled by python side fallback
 at::Tensor spyre_empty(c10::IntArrayRef size,
