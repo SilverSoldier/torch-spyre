@@ -41,6 +41,7 @@
 #include "logging.h"
 #include "spyre_allocator.h"
 #include "spyre_mem.h"
+#include "spyre_mem_stat.h"
 #include "spyre_sendnn_utils.h"
 #include "spyre_stream.h"
 #include "spyre_views.h"
@@ -260,8 +261,8 @@ py::dict get_memory_stats(std::optional<int> device_id) {
   };
 
   const auto statArrayToDict = [=](const StatArray &statArray) {
-    const std::array<const char *, static_cast<size_t>(1)> statTypeNames = {
-        "all"};
+    const std::array<const char *, static_cast<size_t>(StatType::NUM_TYPES)>
+        statTypeNames = {"all", "small_pool", "large_pool"};
     py::dict dict;
     for (const auto i : c10::irange(statTypeNames.size())) {
       dict[statTypeNames[i]] = statToDict(statArray[i]);
@@ -269,11 +270,9 @@ py::dict get_memory_stats(std::optional<int> device_id) {
     return dict;
   };
   const auto &stats = spyre::get_stats(device_id);
-
   py::dict result;
   result["allocation"] = statArrayToDict(stats.allocation);
   result["allocated_bytes"] = statArrayToDict(stats.allocated_bytes);
-
   return result;
 }
 }  // namespace spyre

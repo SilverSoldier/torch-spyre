@@ -18,14 +18,10 @@
 
 #include <c10/core/Allocator.h>
 
-struct DeviceStats {
-  c10::CachingAllocator::StatArray allocation;
-  c10::CachingAllocator::StatArray allocated_bytes;
-};
-
 namespace spyre {
 
-const ::DeviceStats& get_stats(std::optional<int> device_index);
+const c10::CachingDeviceAllocator::DeviceStats get_stats(
+    std::optional<int> device_index);
 
 void reset_peak_stats(std::optional<int> device_index);
 

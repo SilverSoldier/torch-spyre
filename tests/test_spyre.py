@@ -315,7 +315,7 @@ class TestSpyre(TestCase):
             prev_allocated, prev_max_allocated
         )  # Due to reset_peak_memory_stats
         x = torch.rand((64, 64), dtype=torch.float16)
-        mem_size = x.numel() * x.element_size()
+        mem_size = x.numel() * x.element_size()  # 8192 bytes
         self.assertEqual(x.device.type, "cpu")
         self.assertEqual(torch.spyre.memory_allocated(), prev_allocated)
 
