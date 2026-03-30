@@ -132,7 +132,7 @@ c10::DataPtr SpyreAllocator::allocate(size_t nbytes) {
   // NOTE: last argument should be set to 0
   allocator->TryAllocate(&data, nbytes, 0);
   TORCH_CHECK(data, "Failed to allocate ", nbytes, " bytes on Spyre device.");
-  auto* ctx = new SharedOwnerCtx{std::move(data), device_id};
+  auto* ctx = new SharedOwnerCtx{std::move(data), device_id, nbytes};
   void* ctx_void = static_cast<void*>(ctx);
 
   void* data_void = static_cast<void*>(ctx->owner.get());
