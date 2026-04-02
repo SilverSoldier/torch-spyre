@@ -18,7 +18,6 @@ from .memory import (
     reset_peak_memory_stats,
     reset_accumulated_memory_stats,
     memory_stats,
-    memory_stats_as_nested_dict,
 )
 
 __all__ = [
@@ -27,5 +26,4 @@ __all__ = [
     "reset_peak_memory_stats",
     "reset_accumulated_memory_stats",
     "memory_stats",
-    "memory_stats_as_nested_dict",
 ]

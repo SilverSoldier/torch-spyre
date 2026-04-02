@@ -346,9 +346,6 @@ PYBIND11_MODULE(_C, m) {
   m.def("empty_with_layout", &spyre::py_empty_with_layout);
   m.def("as_strided_with_layout", &spyre::as_strided_with_layout);
   m.def("reinterpret_tensor", &spyre::reinterpret_tensor);
-  m.def("memory_stats", &spyre::get_memory_stats);
-  m.def("reset_accumulated_memory_stats", &spyre::reset_accumulated_stats);
-  m.def("reset_peak_memory_stats", &spyre::reset_peak_stats);
   m.def("reinterpret_tensor_with_layout",
         &spyre::reinterpret_tensor_with_layout);
 

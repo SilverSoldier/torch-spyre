@@ -18,6 +18,7 @@ import types
 import importlib
 
 from .constants import DEVICE_NAME
+
 from .memory import (
     memory_allocated,
     max_memory_allocated,
