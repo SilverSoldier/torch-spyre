@@ -58,16 +58,16 @@ c10::CachingDeviceAllocator::DeviceStats SpyreAllocator::getDeviceStats(
 void SpyreAllocator::resetAccumulatedStats(c10::DeviceIndex device) {
   c10::CachingAllocator::for_each_selected_stat_type(
       stat_types, [&](size_t stat_type) {
-        stats_.allocated_bytes[stat_type].reset_peak();
-        stats_.allocation[stat_type].reset_peak();
+        stats_.allocated_bytes[stat_type].reset_accumulated();
+        stats_.allocation[stat_type].reset_accumulated();
       });
 }
 
 void SpyreAllocator::resetPeakStats(c10::DeviceIndex device) {
   c10::CachingAllocator::for_each_selected_stat_type(
       stat_types, [&](size_t stat_type) {
-        stats_.allocated_bytes[stat_type].reset_accumulated();
-        stats_.allocation[stat_type].reset_accumulated();
+        stats_.allocated_bytes[stat_type].reset_peak();
+        stats_.allocation[stat_type].reset_peak();
       });
 }
 
