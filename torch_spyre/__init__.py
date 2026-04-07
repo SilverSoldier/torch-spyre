@@ -233,7 +233,10 @@ def _autoload():
     def _patched_isAllocatorInitialized():
         try:
             return _orig_isAllocatorInitialized()
-        except RuntimeError:
+        except RuntimeError as e:
+            if "not a DeviceAllocator" in str(e):
+                return False
+            raise
             return False
 
     torch._C._accelerator_isAllocatorInitialized = _patched_isAllocatorInitialized
