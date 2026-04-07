@@ -21,8 +21,6 @@
 
 #include <flex/device_types/device_memory_allocator.hpp>
 
-#include "spyre_mem_stat.h"
-
 namespace spyre {
 
 struct SharedOwnerCtx {

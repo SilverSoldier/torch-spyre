@@ -41,7 +41,6 @@
 #include "logging.h"
 #include "spyre_allocator.h"
 #include "spyre_mem.h"
-#include "spyre_mem_stat.h"
 #include "spyre_sendnn_utils.h"
 #include "spyre_stream.h"
 #include "spyre_views.h"
@@ -249,34 +248,6 @@ int device_count() {
   return 1;
 }
 
-py::dict get_memory_stats(std::optional<int> device_id) {
-  using c10::CachingAllocator::Stat;
-  using c10::CachingAllocator::StatArray;
-  using c10::CachingAllocator::StatType;
-  const auto statToDict = [](const Stat &stat) {
-    py::dict dict;
-    dict["current"] = stat.current;
-    dict["peak"] = stat.peak;
-    dict["allocated"] = stat.allocated;
-    dict["freed"] = stat.freed;
-    return dict;
-  };
-
-  const auto statArrayToDict = [=](const StatArray &statArray) {
-    const std::array<const char *, static_cast<size_t>(StatType::NUM_TYPES)>
-        statTypeNames = {"all", "small_pool", "large_pool"};
-    py::dict dict;
-    for (const auto i : c10::irange(statTypeNames.size())) {
-      dict[statTypeNames[i]] = statToDict(statArray[i]);
-    }
-    return dict;
-  };
-  const auto &stats = spyre::get_stats(device_id);
-  py::dict result;
-  result["allocation"] = statArrayToDict(stats.allocation);
-  result["allocated_bytes"] = statArrayToDict(stats.allocated_bytes);
-  return result;
-}
 }  // namespace spyre
 
 namespace py = pybind11;

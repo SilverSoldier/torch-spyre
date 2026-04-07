@@ -698,29 +698,6 @@ at::Tensor py_empty_with_layout(
                            pin_memory_opt, memory_format_opt);
 }
 
-c10::DeviceIndex device_int_to_index(std::optional<int> device_index) {
-  return static_cast<c10::DeviceIndex>(device_index.value_or(-1));
-}
-
-const c10::CachingDeviceAllocator::DeviceStats get_stats(
-    std::optional<int> device_index) {
-  // TODO(kavya): use device_index for multi-device
-  c10::DeviceIndex deviceIndex = device_int_to_index(device_index);
-  return SpyreAllocator::instance().getDeviceStats(deviceIndex);
-}
-
-void reset_peak_stats(std::optional<int> device_index) {
-  // TODO(kavya): use device_index for multi-device
-  c10::DeviceIndex deviceIndex = device_int_to_index(device_index);
-  SpyreAllocator::instance().resetPeakStats(deviceIndex);
-}
-
-void reset_accumulated_stats(std::optional<int> device_index) {
-  // TODO(kavya): use device_index for multi-device
-  c10::DeviceIndex deviceIndex = device_int_to_index(device_index);
-  SpyreAllocator::instance().resetAccumulatedStats(deviceIndex);
-}
-
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("empty.memory_format", TORCH_FN(spyre_empty));
   m.impl("empty_strided", TORCH_FN(spyre_empty_strided));
