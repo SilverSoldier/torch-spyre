@@ -383,17 +383,17 @@ def spyre__sdpa_overrideable(
     philox_seed = torch.empty((1,), dtype=torch.float16, device="spyre")
     philox_offset = torch.empty((1,), dtype=torch.float16, device="spyre")
 
-    # B, H, S, E
+    # B, H, S, E — return BHSE-contiguous to match upstream's meta kernel,
+    # which switched in PT 2.12 to ``alloc_with_matching_layout(query, ...)``
+    # and so reports output stride = query stride. Returning a BSHE-contiguous
+    # tensor viewed as BHSE (the previous behavior) makes the Inductor-emitted
+    # ``assert_size_stride`` check fail at runtime against the meta-derived
+    # expectation. See pytorch/pytorch#178986.
     out = torch.matmul(attn, value)
-
-    # B, S, H, E
-    # Do not remove contiguous here.
-    # This is needed to maintain the API promise from SDPA (attn needs to have same size+stride as q)
-    out = out.transpose(1, 2).clone(memory_format=torch.contiguous_format)
 
     # Returns (Tensor output, Tensor logsumexp, Tensor cum_seq_q, Tensor cum_seq_k, SymInt max_q, SymInt max_k, Tensor philox_seed, Tensor philox_offset, Tensor debug_attn_mask)
     return (
-        out.transpose(1, 2),
+        out,
         logsumexp,
         None,
         None,
