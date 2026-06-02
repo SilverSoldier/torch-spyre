@@ -18,10 +18,32 @@ from . import config
 
 import threading
 from functools import wraps
+from typing import Any
 
 from .propagate_hints import spyre_hint, get_op_hints  # noqa: F401
 
 _autoload_lock = threading.Lock()
+
+
+def _spyre_inner_compile(*args: Any, **kwargs: Any) -> Any:
+    """Wrapper around ``compile_fx_inner`` that pins a picklable ``get_decomp_fn``.
+
+    Background: passing ``decompositions=<dict>`` to ``compile_fx`` causes it
+    to wrap the dict in a local ``def get_decomp_fn`` closure (compile_fx.py).
+    That closure is unpicklable, so the FX graph cache silently bypasses
+    itself with ``BypassFxGraphCache("Failed to pickle cache key")``.
+
+    Workaround: we never pass ``decompositions=``. Instead we override
+    ``inner_compile`` with this wrapper, which clobbers ``get_decomp_fn`` at
+    call time with the module-level ``get_spyre_decomp_table`` — a picklable,
+    name-resolvable callable.
+    NOTE: We are working on improving this in upstream PyTorch
+    """
+    from torch._inductor.compile_fx import compile_fx_inner
+    from torch_spyre._inductor.decompositions import get_spyre_decomp_table
+
+    kwargs["get_decomp_fn"] = get_spyre_decomp_table
+    return compile_fx_inner(*args, **kwargs)
 
 
 def enable_spyre_compile_fx_wrapper():
@@ -94,28 +116,12 @@ def enable_spyre_compile_fx_wrapper():
 
         @wraps(_orig)
         def _wrapper(gm, example_inputs, *args, **kwargs):
-            decomps = kwargs.setdefault(
-                "decompositions", torch._inductor.decomposition.decompositions
-            )
-
             if _uses_spyre(gm, example_inputs):
                 torch.spyre._impl._lazy_init()
-
-                with enable_spyre_context(
-                    example_inputs, decomps=decomps
-                ) as spyre_context_decompositions:
-                    # The `decomps` is the updated in the context manager
-                    # with the appropriate spyre decompositions
-                    # and yielded as `spyre_context_decompositions` from the CM
-
-                    kwargs["decompositions"] = spyre_context_decompositions
-
-                    return _orig(
-                        gm,
-                        example_inputs,
-                        *args,
-                        **kwargs,
-                    )
+                # Route inner compilation through _spyre_inner_compile.
+                kwargs.setdefault("inner_compile", _spyre_inner_compile)
+                with enable_spyre_context(example_inputs):
+                    return _orig(gm, example_inputs, *args, **kwargs)
 
             return _orig(gm, example_inputs, *args, **kwargs)
 
