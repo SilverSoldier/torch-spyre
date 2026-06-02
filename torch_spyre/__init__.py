@@ -78,10 +78,9 @@ class _SpyreImpl:
 
             # Permanently register PrivateUse1 kernels for DispatchKeys
             # so that eager-mode dispatch reaches the Spyre implementations
-            # without requiring global monkey-patching.
-            # Customops must be imported here because decompositions.py references
-            # torch.ops.spyre.* at module level (e.g. torch.ops.spyre.rms_norm).
-            import torch_spyre._inductor.customops  # noqa: F401
+            # without requiring global monkey-patching. (customops is imported
+            # eagerly during _autoload — see torch_spyre/__init__.py — so its
+            # custom_op definitions are already available here.)
             from torch_spyre._inductor.decompositions import (
                 _register_spyre_dispatchkey_kernels_permanently,
             )
@@ -231,6 +230,15 @@ def _autoload():
     from torch_spyre._inductor import _light_autoload
 
     _light_autoload()
+
+    # Register Python-level custom ops (spyre::overwrite, spyre::softplus,
+    # spyre::layer_norm, …) eagerly. These are torch.library.custom_op
+    # definitions with no C++/runtime dependency, so the import does NOT
+    # trigger _lazy_init or load torch_spyre._C. Eager registration lets
+    # CPU-only callers resolve torch.ops.spyre.* without first touching
+    # the device — required because PT 2.12 no longer transitively imports
+    # this module before such call sites run.
+    import torch_spyre._inductor.customops  # noqa: F401
 
     # Register the Spyre CCL distributed backend.
     # The creator function is a lazy proxy — _C is not imported until
