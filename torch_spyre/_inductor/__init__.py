@@ -118,7 +118,19 @@ def enable_spyre_compile_fx_wrapper():
         def _wrapper(gm, example_inputs, *args, **kwargs):
             if _uses_spyre(gm, example_inputs):
                 torch.spyre._impl._lazy_init()
-                # Route inner compilation through _spyre_inner_compile.
+                # AOTAutograd uses the dict passed via ``decompositions=`` to
+                # decompose the joint graph; Spyre-specific decompositions must
+                # be applied at this stage so ops like aten.logical_not /
+                # aten.ceil / aten.sign are reduced to primitives the Spyre
+                # OpFuncs handler implements.
+                from torch_spyre._inductor.decompositions import (
+                    get_spyre_decomp_table,
+                )
+
+                kwargs.setdefault("decompositions", get_spyre_decomp_table())
+                # Route inner compilation through _spyre_inner_compile, which
+                # re-binds ``get_decomp_fn`` to a picklable module-level
+                # callable so the FX graph cache key stays serializable.
                 kwargs.setdefault("inner_compile", _spyre_inner_compile)
                 with enable_spyre_context(example_inputs):
                     return _orig(gm, example_inputs, *args, **kwargs)
