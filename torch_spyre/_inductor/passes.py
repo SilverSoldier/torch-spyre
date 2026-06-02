@@ -33,6 +33,7 @@ from .logging_utils import get_inductor_logger
 from .padding import insert_bmm_padding
 from .temp_passes import (
     bmm_unflatten_pass,
+    decompose_addmm,
     mm_to_bmm_pass,
     convert_constant_with_graph_node,
     hints_to_coarse_tile_groups,
@@ -151,6 +152,10 @@ class CustomPostPasses(CustomGraphPass):
     The list of custom passes to run
     """
     passes: List[Callable[[torch.fx.graph.Graph], None]] = [
+        # decompose_addmm runs before convert_constant_with_graph_node so
+        # the alpha/beta scalars it emits get rewritten into spyre.constant
+        # tensors by the latter.
+        decompose_addmm,
         recover_spyre_hints,
         convert_constant_with_graph_node,
         mm_to_bmm_pass.apply,
