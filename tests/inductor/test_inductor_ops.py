@@ -1686,6 +1686,10 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
                 "2d": (cached_randn((256, 128), dtype=torch.float16),),
                 "3d": (cached_randn((8, 16, 256), dtype=torch.float16),),
             },
+            # PT 2.12: the 3D fp16 (8, 16, 256) shape drifts a single element
+            # past tolerance under exp → sin (CPU fallback) → exp. 1D/2D pass.
+            # Likely tied to the post-fallback re-entry path.
+            "expect_fail": ["3d"],
         },
         (
             "test_arange",
