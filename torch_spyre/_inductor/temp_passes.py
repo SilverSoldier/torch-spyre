@@ -460,6 +460,21 @@ def convert_constant_with_graph_node(graph: torch.fx.Graph) -> None:
         torch.ops.aten.true_divide.Tensor: torch.ops.aten.true_divide.Tensor,
         torch.ops.aten.div.Tensor: torch.ops.aten.div.Tensor,
         torch.ops.aten.div.Scalar: torch.ops.aten.div.Tensor,
+        # Comparison ops: the constant must be promoted to a tensor matching the
+        # operand dtype (the output is bool). The Spyre backend lowers each of
+        # these to a two-tensor PointwiseOp, so the .Scalar form has no codegen.
+        torch.ops.aten.eq.Tensor: torch.ops.aten.eq.Tensor,
+        torch.ops.aten.eq.Scalar: torch.ops.aten.eq.Tensor,
+        torch.ops.aten.ne.Tensor: torch.ops.aten.ne.Tensor,
+        torch.ops.aten.ne.Scalar: torch.ops.aten.ne.Tensor,
+        torch.ops.aten.ge.Tensor: torch.ops.aten.ge.Tensor,
+        torch.ops.aten.ge.Scalar: torch.ops.aten.ge.Tensor,
+        torch.ops.aten.gt.Tensor: torch.ops.aten.gt.Tensor,
+        torch.ops.aten.gt.Scalar: torch.ops.aten.gt.Tensor,
+        torch.ops.aten.le.Tensor: torch.ops.aten.le.Tensor,
+        torch.ops.aten.le.Scalar: torch.ops.aten.le.Tensor,
+        torch.ops.aten.lt.Tensor: torch.ops.aten.lt.Tensor,
+        torch.ops.aten.lt.Scalar: torch.ops.aten.lt.Tensor,
     }
 
     for node in graph.nodes:

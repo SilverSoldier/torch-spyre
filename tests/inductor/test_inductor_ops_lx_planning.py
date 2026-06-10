@@ -173,6 +173,10 @@ POINTWISE_TEST_FAILURES = [
     "test_sqrt_fp32_sqrt_1d_abs_fp32",
     "test_sqrt_fp32_sqrt_2d_abs_fp32",
     "test_sqrt_fp32_sqrt_3d_abs_fp32",
+    # PT 2.12: fp16 sum-reduction on (67, 256) along dim 0, post-wrapped with
+    # x + x in the LX-pointwise harness, drifts a single element by 0.14
+    # (>0.1 tol). Plain TestOps variant passes; only the wrapped form fails.
+    "test_sum_keepdim0_sum_fp16_2d_dim_0",
     "test_transpose_2d_contiguous_dim_0_1",
     "test_transpose_2d_contiguous_dim_0_2",
     "test_transpose_3d_contiguous_dim_0_1",

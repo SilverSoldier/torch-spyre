@@ -675,8 +675,10 @@ class _OOTPlatformMarkerPatcher:
         # Attach to pytestmark list so @wraps-based propagation carries it
         # through every decorator layer that instantiate_test applies later.
         if not hasattr(self._underlying_fn, "pytestmark"):
-            self._underlying_fn.pytestmark = []
-        self._underlying_fn.pytestmark = list(self._underlying_fn.pytestmark) + [mark]
+            self._underlying_fn.pytestmark = []  # type: ignore[union-attr]
+        self._underlying_fn.pytestmark = (  # type: ignore[union-attr]
+            list(self._underlying_fn.pytestmark) + [mark]  # type: ignore[union-attr]
+        )
 
 
 class _OOTOpMarkerPatcher:
