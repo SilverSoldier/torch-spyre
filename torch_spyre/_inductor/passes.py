@@ -40,7 +40,6 @@ from .logging_utils import get_inductor_logger
 from .padding import insert_bmm_padding
 from .temp_passes import (
     bmm_unflatten_pass,
-    decompose_addmm,
     mark_direct_unit_bmm_pass,
     mm_to_bmm_pass,
     convert_constant_with_graph_node,

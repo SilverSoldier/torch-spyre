@@ -448,15 +448,19 @@ def convert_constant_with_graph_node(graph: torch.fx.Graph) -> None:
     ``spyre.constant`` tensor node.
     """
 
-    ops_support_list = [
-        torch.ops.aten.add.Tensor,
-        torch.ops.aten.sub.Tensor,
-        torch.ops.aten.mul.Tensor,
-        torch.ops.aten.true_divide.Tensor,
-        torch.ops.aten.div.Tensor,
-        torch.ops.aten.eq.Tensor,
-        torch.ops.aten.eq.Scalar,
-    ]
+    # Map .Scalar overloads to their .Tensor counterparts. The .Tensor entries
+    # also map to themselves so the downstream rewrite is uniform.
+    scalar_to_tensor_overload = {
+        torch.ops.aten.add.Tensor: torch.ops.aten.add.Tensor,
+        torch.ops.aten.add.Scalar: torch.ops.aten.add.Tensor,
+        torch.ops.aten.sub.Tensor: torch.ops.aten.sub.Tensor,
+        torch.ops.aten.sub.Scalar: torch.ops.aten.sub.Tensor,
+        torch.ops.aten.mul.Tensor: torch.ops.aten.mul.Tensor,
+        torch.ops.aten.mul.Scalar: torch.ops.aten.mul.Tensor,
+        torch.ops.aten.true_divide.Tensor: torch.ops.aten.true_divide.Tensor,
+        torch.ops.aten.div.Tensor: torch.ops.aten.div.Tensor,
+        torch.ops.aten.div.Scalar: torch.ops.aten.div.Tensor,
+    }
 
     for node in graph.nodes:
         if node.target not in scalar_to_tensor_overload:
