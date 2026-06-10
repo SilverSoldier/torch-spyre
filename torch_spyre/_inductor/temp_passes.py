@@ -449,7 +449,10 @@ def convert_constant_with_graph_node(graph: torch.fx.Graph) -> None:
     """
 
     # Map .Scalar overloads to their .Tensor counterparts. The .Tensor entries
-    # also map to themselves so the downstream rewrite is uniform.
+    # also map to themselves so the downstream rewrite is uniform. After the
+    # scalar arg is rewritten into a tensor node, an arithmetic ``.Scalar`` node
+    # must be retargeted to its ``.Tensor`` overload so its schema accepts the
+    # tensor argument.
     scalar_to_tensor_overload = {
         torch.ops.aten.add.Tensor: torch.ops.aten.add.Tensor,
         torch.ops.aten.add.Scalar: torch.ops.aten.add.Tensor,
@@ -460,25 +463,33 @@ def convert_constant_with_graph_node(graph: torch.fx.Graph) -> None:
         torch.ops.aten.true_divide.Tensor: torch.ops.aten.true_divide.Tensor,
         torch.ops.aten.div.Tensor: torch.ops.aten.div.Tensor,
         torch.ops.aten.div.Scalar: torch.ops.aten.div.Tensor,
-        # Comparison ops: the constant must be promoted to a tensor matching the
-        # operand dtype (the output is bool). The Spyre backend lowers each of
-        # these to a two-tensor PointwiseOp, so the .Scalar form has no codegen.
-        torch.ops.aten.eq.Tensor: torch.ops.aten.eq.Tensor,
-        torch.ops.aten.eq.Scalar: torch.ops.aten.eq.Tensor,
-        torch.ops.aten.ne.Tensor: torch.ops.aten.ne.Tensor,
-        torch.ops.aten.ne.Scalar: torch.ops.aten.ne.Tensor,
-        torch.ops.aten.ge.Tensor: torch.ops.aten.ge.Tensor,
-        torch.ops.aten.ge.Scalar: torch.ops.aten.ge.Tensor,
-        torch.ops.aten.gt.Tensor: torch.ops.aten.gt.Tensor,
-        torch.ops.aten.gt.Scalar: torch.ops.aten.gt.Tensor,
-        torch.ops.aten.le.Tensor: torch.ops.aten.le.Tensor,
-        torch.ops.aten.le.Scalar: torch.ops.aten.le.Tensor,
-        torch.ops.aten.lt.Tensor: torch.ops.aten.lt.Tensor,
-        torch.ops.aten.lt.Scalar: torch.ops.aten.lt.Tensor,
+    }
+
+    # Comparison ops: promote the scalar constant to a tensor matching the
+    # operand dtype (the output stays bool), but do NOT retarget the overload.
+    # The Spyre lowering treats both args of a comparison uniformly, and
+    # aten.<cmp>.Tensor's meta kernel rejects a non-Tensor in the schema-checked
+    # path, so leaving the node on its original (.Scalar/.Tensor) overload with
+    # a tensor-producing constant node is what flows correctly to codegen.
+    comparison_ops = {
+        torch.ops.aten.eq.Tensor,
+        torch.ops.aten.eq.Scalar,
+        torch.ops.aten.ne.Tensor,
+        torch.ops.aten.ne.Scalar,
+        torch.ops.aten.ge.Tensor,
+        torch.ops.aten.ge.Scalar,
+        torch.ops.aten.gt.Tensor,
+        torch.ops.aten.gt.Scalar,
+        torch.ops.aten.le.Tensor,
+        torch.ops.aten.le.Scalar,
+        torch.ops.aten.lt.Tensor,
+        torch.ops.aten.lt.Scalar,
     }
 
     for node in graph.nodes:
-        if node.target not in scalar_to_tensor_overload:
+        if node.target not in scalar_to_tensor_overload and (
+            node.target not in comparison_ops
+        ):
             continue
         for idx, in_arg in enumerate(node.args):
             if isinstance(in_arg, torch.fx.node.Node):
@@ -507,7 +518,9 @@ def convert_constant_with_graph_node(graph: torch.fx.Graph) -> None:
                 )
             copy_fx_custom_meta(node, const_node)
             node.update_arg(idx, const_node)
-        # Retarget .Scalar overloads to .Tensor now that the scalar arg is a tensor.
-        node.target = scalar_to_tensor_overload[node.target]
+        # Retarget arithmetic .Scalar overloads to .Tensor now that the scalar
+        # arg is a tensor. Comparison ops keep their original overload (see above).
+        if node.target in scalar_to_tensor_overload:
+            node.target = scalar_to_tensor_overload[node.target]
 
     graph.lint()
