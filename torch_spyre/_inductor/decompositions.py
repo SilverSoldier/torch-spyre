@@ -35,6 +35,7 @@ import torch._decomp as decomp
 from .constants import DEVICE_NAME, FP8_E4M3_MAX
 from .errors import Unsupported
 from torch_spyre._C import DataFormats, get_device_dtype
+import torch_spyre._inductor.customops  # noqa: F401
 
 
 # Determine the float dtype for bool at module load time (not during tracing)
