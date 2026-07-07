@@ -32,6 +32,8 @@ what constraints forced each choice — see the companion RFC
 - [Design Overview](#design-overview)
 - [Small Example](#small-example)
 - [Layer 1 — IR pass & `coarse_tile()` API](#layer-1--pre-scheduling-ir-pass)
+  - [`reorder_unhinted_interlopers`](#reorder_unhinted_interlopers-pre-grouping-pass)
+  - [Groups derivation and placement](#groups-derivation-and-placement-in-custompreschedulingpasses)
 - [Layer 2 — `CountedLoopSchedulerNode`](#layer-2--countedloopschedulernode)
 - [Layer 3 — `LoopSpec` & codegen](#layer-3--loopspec-and-codegen)
 - [Key files](#key-files)
@@ -99,8 +101,8 @@ name_tensor_dims(b, ["A", "B"])
 name_tensor_dims(c, ["A", "B"])
 
 def f(a, b, c):
-    with spyre_hint(slices={"A": 2}):     # outer loop: 2 iterations over rows
-        with spyre_hint(slices={"B": 4}): # inner loop: 4 iterations over cols
+    with spyre_hint(num_tiles_per_dim={"A": 2}):     # outer loop: 2 iterations over rows
+        with spyre_hint(num_tiles_per_dim={"B": 4}): # inner loop: 4 iterations over cols
             y = a + b
             z = y * c
             return z
@@ -115,7 +117,8 @@ within the tile.
 
 This example is the canonical small example tested by
 `test_hint_nested_loop_with_scratchpad` in
-`tests/inductor/test_coarse_tile_e2e.py`.
+`tests/inductor/test_coarse_tile_e2e.py`.  (`slices=` also works — it is a
+deprecated alias for `num_tiles_per_dim=`.)
 
 ### What the coarse-tiling pass stamps
 
@@ -202,7 +205,7 @@ Key points:
 
 The Python wrapper emitted by `codegen_kernel()` contains both ops inside a
 single nested `LoopSpec`.  Below is the actual output produced by running the e2e test
-`test_hint_nested_loop_with_scratchpad` (which uses `spyre_hint(slices=...)` /
+`test_hint_nested_loop_with_scratchpad` (which uses `spyre_hint(num_tiles_per_dim=...)` /
 `declare_tensor_dim` / `name_tensor_dims` with `allow_all_ops_in_lx_planning=True`;
 concrete HBM addresses replaced with symbolic names for readability):
 
@@ -464,15 +467,17 @@ object.__setattr__(data, "ranges", ranges)
 
 ```python
 def coarse_tile(
-    operations: list[Operation],
+    graph: GraphLowering,
     groups: list[tuple],
 ) -> None:
 ```
 
 `groups` is a pre-computed list of group tuples produced by
 `hints_to_coarse_tile_groups`.  Each `ops` list must be a contiguous
-sub-sequence of `operations`; a gap indicates a data-flow dependency
-crossing the group boundary and raises `RuntimeError`.
+sub-sequence of `graph.operations`; a gap indicates a data-flow dependency
+crossing the group boundary and raises `RuntimeError`.  The full
+`GraphLowering` is required (not just the operations list) because
+`insert_tiling_propagation` calls `V.graph` APIs to allocate new buffers.
 
 Each group tuple has the form:
 
@@ -501,9 +506,88 @@ representation; it is built by `_hints_levels()` inside
 `hints_to_coarse_tile_groups` in `coarse_tile.py` before `coarse_tile()`
 stamps each op.
 
+### `reorder_unhinted_interlopers`: pre-grouping pass
+
+Before `hints_to_coarse_tile_groups` walks the operation list,
+`reorder_unhinted_interlopers` reorders any unhinted `ComputedBuffer` that
+would otherwise break a contiguous run of same-hint ops into two separate groups.
+
+#### Why it is needed
+
+`hints_to_coarse_tile_groups` collects consecutive same-key ops into a group and
+stops as soon as the key changes.  An unhinted op sandwiched between two
+same-key ops would split what should be one group into two.  This pass attempts
+to move ("reorder") such interlopers either before or after the run so the run
+becomes contiguous.
+
+#### Algorithm invariants enforced by the pass
+
+The algorithm is a two-cursor scan.  The outer cursor `i` starts at the first
+op of each new candidate run.  The inner cursor `j` walks forward, absorbing
+same-key ops.  When it encounters an unhinted `ComputedBuffer` interloper it
+applies one of three outcomes:
+
+1. **Move before** (`_can_move_before` returns `True`): `ops.insert(run_start,
+   ops.pop(j))`.  `run_start` is incremented by 1 to skip past the newly
+   inserted op; `j` stays pointing at the next candidate.
+2. **Move after** (`_can_move_after` returns `True`): `ops.insert(run_end - 1,
+   ops.pop(j))`.  `run_end` is one past the *last* same-key op in the remainder
+   (found by a backward scan), not merely the next one.  This ensures the entire
+   remaining run is covered when later interlopers would otherwise still split it.
+   After `pop(j)` shifts everything left, the insertion at `run_end - 1` lands
+   just after the last hinted op.
+3. **Neither** (both checks fail): raises `RuntimeError` with the op name and the
+   hint group it is blocking.
+
+When **both** directions are legal, the op is moved **before** the run (closer
+to its original position).
+
+#### Legality check: `_no_dep_conflict`
+
+A move is legal when it introduces no new data-flow hazard between the interloper
+and every op in the skipped range.  `_no_dep_conflict` checks four conditions:
+
+- **RAW** (read-after-write): the interloper reads a buffer written by an op in
+  the range (would observe a stale value after reordering).
+- **WAW** (write-after-write): the interloper writes a buffer also written by an
+  op in the range (order of writes matters; both directions are conservatively
+  flagged).
+- Symmetric versions: an op in the range reads or mutates a buffer written by the
+  interloper.
+
+`_no_dep_conflict` includes `op.get_mutation_names()` on both sides so that WAW
+hazards through mutation aliases are detected.  The WAW check is deliberately
+conservative: two ops mutating the same buffer cannot be safely reordered in
+either direction.
+
+#### Non-`ComputedBuffer` ops are hard stops
+
+If the inner cursor `j` reaches an op that is not a `ComputedBuffer`, or a
+`ComputedBuffer` whose hint key is different from the current run's key and
+is non-`None` (i.e., it belongs to a *different* hint group), the scan stops
+immediately.  Such ops cannot be moved by this pass.
+
+#### Trailing consumer pattern
+
+If no same-key op exists after position `j` (i.e. the unhinted op is after the
+last hinted op in this group), `run_end` is `None` and the scan ends silently.
+The unhinted op is not an interloper in this case — it is a trailing consumer.
+
+#### Key invariant summary
+
+| Invariant | How it is enforced |
+|---|---|
+| Every interloper is moved before or after the run | `RuntimeError` if neither direction is legal |
+| Move-before uses the run start (not last position) | `run_start` used as insertion target |
+| Move-after uses the last same-key op (not just the next) | Backward scan for `run_end` |
+| WAW hazards are treated as conflicts in both directions | `get_mutation_names()` included in both `op_written` and `op_needs` |
+| Non-`ComputedBuffer` ops are not moved | Type check in `_can_move_before` / `_can_move_after` |
+| Only unhinted `ComputedBuffer`s are candidates | `ckey is not None` triggers hard stop |
+
 ### Groups derivation and placement in `CustomPreSchedulingPasses`
 
-Groups are derived automatically from `spyre_hint(slices=...)` annotations
+Groups are derived automatically from `spyre_hint(num_tiles_per_dim=...)` annotations
+(`slices=` and `tiles=` are deprecated aliases that still work)
 via `hints_to_coarse_tile_groups` (in `torch_spyre/_inductor/coarse_tile.py`),
 which is a no-op when no hints are present.  `CustomPreSchedulingPasses`
 maintains a `self.passes` list of uniform `Callable[[GraphLowering], None]`
@@ -513,18 +597,26 @@ wrapped in private helpers tagged with `@_runs(...)` for cache-key purposes:
 ```python
 self.passes = [
     deadcode_elimination,
+    # Tensor Layout (Stickification)
+    split_multi_ops,
     propagate_spyre_tensor_layouts,
+    validate_ops,
     optimize_restickify_locations,
     finalize_layouts,
     insert_restickify,
     insert_bmm_padding,
+    #
     dedup_and_promote_constants,
+    # Working Set Reduction
     _maybe_chunk_large_tensors,   # config-gated
     propagate_named_dims,
     assign_dim_hints,
-    _maybe_coarse_tile,           # calls hints_to_coarse_tile_groups + coarse_tile
+    _maybe_coarse_tile,           # reorder_unhinted_interlopers + hints_to_coarse_tile_groups
+                                  # + span_overflow_groups + coarse_tile
+    # Core Division
     span_reduction,
     _distribute_work,             # calls cost_model_matmul_division + work_distribution
+    # LX Planning
     _maybe_scratchpad_planning,   # config-gated; calls scratchpad_planning
 ]
 ```
@@ -632,27 +724,57 @@ existing storage in-place.  The full buffer's address is encoded in the
 unified treatment that always inserted a copy would handle all three cases
 correctly but waste a copy op here.
 
-#### Reduction tiling: Stage 1 (non-stick reduction dims)
+#### Reduction tiling: stick and non-stick reduction dims
 
 When a `Reduction` op has a non-empty `loop_tiled_reduction_dims`
 (i.e. the hint named a reduction dimension), `_propagate_tiled_reduction_op`
-uses a **fill-initialize + per-tile combine** pattern:
+uses a **fill-initialize + per-tile combine** pattern.  The exact buffer
+allocation depends on whether tiling is flat (reduction dim only) or nested
+(outer output dim + inner reduction dim):
 
-1. **Allocate an HBM accumulation buffer** with the full output shape
-   (`data.ranges`, which is already the full output since only
-   `reduction_ranges` was divided by the tiling pass).
+**Flat (K-only) tiling** — a single `accum_full` HBM buffer is allocated.
+The fill and combine ops both target `accum_full` directly.
+
+1. **Allocate `accum_full`** with the full output shape (`data.ranges`,
+   which is already the full output since only `reduction_ranges` was
+   divided by the tiling pass).
 2. **Insert a fill op** (outside the loop, no `loop_info`) that writes the
-   reduction's identity value into the accumulation buffer.  The identity
-   value is produced by a `SpyreConstantFallback` scalar with a manually
-   assigned `FixedTiledLayout` (necessary because `finalize_layouts` has
-   already run by the time this pass executes).
+   reduction's identity value into `accum_full`.  The identity value is
+   produced by a `SpyreConstantFallback` scalar with a manually assigned
+   `FixedTiledLayout` (necessary because `finalize_layouts` has already run
+   by the time this pass executes).
 3. **Insert a combine op** (inside the loop, same `loop_info` as the tiled
-   reduction op) that merges each tile's partial result into the accumulation
-   buffer using the appropriate pointwise binary operator.
+   reduction op) that merges each tile's partial result into `accum_full`
+   using the appropriate pointwise binary operator.
 4. **Mark the tiled reduction op's output `per_tile_fixed`** — it is a
    per-tile scratch buffer whose base address does not advance between
    iterations.
-5. **Patch outside consumers** to read the accumulation buffer.
+5. **Patch outside consumers** to read `accum_full`.
+
+**Nested (outer output dim + inner reduction dim) tiling** — two buffers
+are allocated to enable LX scratchpad placement of the inner accumulator
+(e.g. outer-B + inner-K for bmm/mm):
+
+1. **Allocate `accum_full`** (full HBM output, shape matching the full
+   output across all outer tiles).
+2. **Allocate `accum_tile`** (per-tile scratch, same per-tile output shape).
+   `accum_tile.layout.per_tile_fixed = True` so the unroller never advances
+   its base address; `scratchpad_planning` can therefore place it in LX
+   scratchpad memory.
+3. **Insert a fill op** (inside the outer loop, carrying the outer
+   `loop_info`) that writes the identity value into `accum_tile` once per
+   outer-loop tile.
+4. **Insert a combine op** (inside the inner loop, same `loop_info` as the
+   tiled reduction op) that merges each inner-tile partial result into
+   `accum_tile`.
+5. **Insert a `coarse_tile_reduce_copy` op** (inside the outer loop, after
+   the inner loop) that copies `accum_tile → accum_full`.  It carries the
+   outer `loop_info` so the unroller advances `accum_full`'s HBM address
+   once per outer-loop tile.  The copy uses `MutationLayoutSHOULDREMOVE`
+   so no extra allocation is created.
+6. **Mark the tiled reduction op's output `per_tile_fixed`** (the inner
+   scratch for the reduction kernel itself).
+7. **Patch outside consumers** to read `accum_full`.
 
 Identity values and combine operators by `reduction_type`:
 
@@ -669,28 +791,23 @@ Identity values and combine operators by `reduction_type`:
 `RuntimeError` when a user attempts to tile them.
 
 Before running propagation, the pass calls `_validate_reduction_tiling(op)`,
-which raises `RuntimeError` for configurations deferred to Stage 2:
+which raises `RuntimeError` for configurations not yet implemented:
 
-- **Stick-dim reduction** — if the tiled reduction index corresponds to the
-  within-stick dimension of the primary input (detected via
-  `device_coordinates`).
 - **Mixed output+reduction at the same nesting level** — `loop_tiled_dims[i]`
   and `loop_tiled_reduction_dims[i]` are both non-empty for some level `i`.
-- **Mixed output+reduction across different levels** — some levels tile only
-  output dims, others tile only reduction dims.
 - **Multiple reduction indices at one level** — `len(loop_tiled_reduction_dims[i]) > 1`.
 
-The cross-level mixed check runs first (before the per-level loop) so Stage 2
-errors are raised before `_reduction_tiling_is_on_stick_dim` is called, which
-requires a real `get_read_writes()` result.
+Stick-dim reduction tiling is fully supported: tiling the innermost (stick)
+dimension of the input (e.g. `x.sum(dim=-1)` on a `[B, D]` tensor where D
+maps to the stick, or K-tiling for `BATCH_MATMUL_OP`) uses the same
+fill-initialize + per-tile combine pattern.  The output accumulator for a
+scalar stick-dim reduction has shape `data.ranges` (e.g. `[B]`) — the stick
+dim has been collapsed — and `_resize_device_layout` handles this "stick
+eliminated" case correctly.
 
-**Stage 2 (not yet implemented):** Stick-dim reduction tiling requires
-handling the column-vector output addressing that arises when the tiling
-dimension is the innermost (stick) dimension of the input.  The
-`loop_tiled_reduction_dims` field is already shaped as a `list[list[int]]`
-to anticipate multi-level nesting; relaxing the Stage 2 guard in
-`_validate_reduction_tiling` and adding stick-dim output addressing is the
-only remaining work.
+Nested tiling where outer level(s) tile output dims and the innermost level
+tiles a reduction dim (e.g. outer-B + inner-K for bmm) is fully supported
+and handled by the two-buffer pattern described above.
 
 ## Layer 2 — `CountedLoopSchedulerNode`
 
@@ -1111,7 +1228,7 @@ When backend support lands, `unroll_loops` will be flipped to default
 | File | Role |
 |---|---|
 | `torch_spyre/_inductor/loop_info.py` | Layer 1: `CoarseTileInfo` dataclass; `copy_op_metadata` |
-| `torch_spyre/_inductor/coarse_tile.py` | Layer 1: `coarse_tile()` stamps `loop_info` and rewrites ranges; `insert_tiling_propagation` handles the data perimeter |
+| `torch_spyre/_inductor/coarse_tile.py` | Layer 1: `reorder_unhinted_interlopers()` reorders interlopers before grouping; `coarse_tile()` stamps `loop_info` and rewrites ranges; `insert_tiling_propagation` handles the data perimeter |
 | `torch_spyre/_inductor/scheduler.py` | Layer 2: `CountedLoopSchedulerNode`, `build_loop_scheduler_nodes`, `_codegen_counted_loop` |
 | `torch_spyre/_inductor/op_spec.py` | Layer 3: `LoopSpec` and `OpSpec` dataclasses |
 | `torch_spyre/_inductor/spyre_kernel.py` | Layer 3: serializes `LoopSpec` tree in `codegen_kernel()`; `wrap_op_specs_in_loop()` |
@@ -1127,11 +1244,20 @@ When backend support lands, `unroll_loops` will be flipped to default
 
 ## Invariants and failure modes
 
+**Pre-grouping contiguity** (`reorder_unhinted_interlopers`): before
+`hints_to_coarse_tile_groups` runs, every unhinted `ComputedBuffer` that
+sits between two same-hint ops is moved to just before or just after the
+run.  If a data-flow dependency prevents both directions, a `RuntimeError`
+is raised.  This ensures that all same-hint ops are contiguous in
+`graph.operations` before grouping begins.
+
 **Contiguity invariant**: all `SchedulerNode`s sharing a
 `loop_info.loop_group_id` must be contiguous after the scheduler's
-topological sort.  If the tiling pass stamps ops that have a data dependency
-crossing the group boundary, the post-fusion pass will detect a non-contiguous
-run and raise a `RuntimeError`.
+topological sort.  `_stamp_group` enforces this at stamp time via
+`_validate_contiguous`, which raises `RuntimeError` if the ops are not
+a contiguous slice of the operation list.  The post-fusion pass
+(`build_loop_scheduler_nodes`) also asserts this by processing a contiguous
+run — a non-contiguous run indicates a bug in the tiling pass.
 
 **Consistent `loop_count`**: all ops sharing a `loop_group_id` must agree on
 `loop_info.loop_count` at every depth level.  The post-fusion pass asserts
