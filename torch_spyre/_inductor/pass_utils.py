@@ -236,9 +236,7 @@ def concretize_index(index: sympy.Expr, loop_vars: set) -> sympy.Expr:
     # drop the symbol from the coordinate and break named-dim propagation for
     # gathers. Only genuine dynamic-shape size symbols (s0, s1, ...) should be
     # concretized here; indirect symbols must stay symbolic.
-    size_syms = {
-        s for s in (index.free_symbols - loop_vars) if not is_indirect(s.name)
-    }
+    size_syms = {s for s in (index.free_symbols - loop_vars) if not is_indirect(s.name)}
     if not size_syms:
         return index
     # Try each symbol individually
