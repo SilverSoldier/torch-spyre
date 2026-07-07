@@ -31,7 +31,7 @@ from torch._inductor.ir import (
     Reduction,
 )
 from torch._inductor.scheduler import SchedulerNode
-from torch._inductor.dependencies import MemoryDep, ReadWrites
+from torch._inductor.dependencies import MemoryDep, ReadWrites, is_indirect
 from torch._inductor.virtualized import V
 from torch_spyre._C import SpyreTensorLayout, get_elem_in_stick
 from torch_spyre._inductor.errors import Unsupported
@@ -230,7 +230,15 @@ def concretize_index(index: sympy.Expr, loop_vars: set) -> sympy.Expr:
     if not isinstance(index, sympy.Basic):
         return sympy.sympify(index)
 
-    size_syms = index.free_symbols - loop_vars
+    # Exclude indirect (gather/scatter) index symbols such as ``tmp0``. Under
+    # PT 2.12, ``optimization_hint`` concretizes an unbacked indirect symbol to
+    # ``config.unbacked_symint_fallback`` (8192) instead of raising, which would
+    # drop the symbol from the coordinate and break named-dim propagation for
+    # gathers. Only genuine dynamic-shape size symbols (s0, s1, ...) should be
+    # concretized here; indirect symbols must stay symbolic.
+    size_syms = {
+        s for s in (index.free_symbols - loop_vars) if not is_indirect(s.name)
+    }
     if not size_syms:
         return index
     # Try each symbol individually

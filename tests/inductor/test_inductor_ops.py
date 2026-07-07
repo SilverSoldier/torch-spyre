@@ -3030,6 +3030,13 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
                 "3d128_1": (2, 32, 160, cached_randn((2, 192, 256))),
                 "3d128_01": (2, 32, 160, cached_randn((128, 192, 256))),
             },
+            # PT 2.12: the fp16 sum-reduction over the sliced (128, 192, 256)
+            # input drifts a single element (1/16384) by ~0.11 (>0.1 tol). The
+            # reduction path is byte-identical to main; PT 2.12 shifted the CPU
+            # reference numerics enough to push an already-marginal fp16
+            # accumulation over the line. Same class as the cases xfailed in
+            # commit 3a2d482. amax on the same shape passes, so target sum only.
+            "expect_fail": ["sum_3d128_01"],
         },
         ("test_slice_stick_reduce_dim2", "test_slice_cpu"): {
             "ops_dict": {
