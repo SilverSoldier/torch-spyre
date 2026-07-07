@@ -71,6 +71,15 @@ spyre_decompositions: dict = {}
 spyre_decompositions_to_exclude = [
     torch.ops.aten.triu,
     torch.ops.aten.tril,
+    # PT 2.12 broadened torch._inductor.decomposition.mm/bmm to decompose the
+    # K==1 (unit-contraction) case into a broadcast ``self * other`` on all
+    # non-cpu/mps devices. That AOT decomposition runs before Spyre's
+    # ``mm_to_bmm_pass`` and produces a flatten-mul-unflatten shape whose
+    # trailing view yields an unsupported ``floor(d0/N)`` stick expression.
+    # Spyre has its own aten.mm / aten.bmm lowerings, so drop the upstream
+    # decomps and let the mm/bmm survive to mm_to_bmm_pass (2.11 behavior).
+    torch.ops.aten.mm,
+    torch.ops.aten.bmm,
 ]
 
 OpOrOps = Union[torch._ops.OperatorBase, Sequence[torch._ops.OperatorBase]]
