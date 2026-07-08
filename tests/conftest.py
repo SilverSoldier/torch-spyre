@@ -18,6 +18,7 @@ import yaml
 import pytest
 import regex as re
 
+
 import shared_config
 from oot_framework.oot_test_utilities import _RUNTIME_TAGS, _RUNTIME_SHAPES
 
