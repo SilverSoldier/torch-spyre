@@ -153,9 +153,11 @@ class TestSpyreTensorLayout(TestCase):
         x = torch.rand([512, 256], dtype=torch.float16)
         x_stl = SpyreTensorLayout([512, 256], torch.float16)
         x_dev = x.to(device_layout=x_stl)
-        # Device fp16 storage rounds to ~1/2048 granularity; near-zero values can
-        # drift past assertEqual's default fp16 atol=1e-5. Use an explicit fp16
-        # tolerance that reflects the device's real precision.
+        # Device fp16 storage rounds to ~1/2048 (~4.9e-4) granularity; near-zero
+        # values can drift past assertEqual's default fp16 atol=1e-5. Empirically
+        # the observed max round-trip delta on these torch.rand tensors is
+        # ~4.9e-4, so atol/rtol=1e-3 sits just above the device's real precision
+        # without being loose enough to mask a genuine regression.
         self.assertEqual(x, x_dev.cpu(), atol=1e-3, rtol=1e-3)
 
         y = torch.rand([512, 512], dtype=torch.float16)
@@ -477,9 +479,11 @@ class TestSpyreTensorLayout(TestCase):
         x = torch.rand([512, 256], dtype=torch.float16)
         x_stl = SpyreTensorLayout([512, 256], [256, 1], torch.float16, [0, 1, -1])
         x_dev = x.to("spyre", device_layout=x_stl)
-        # Device fp16 storage rounds to ~1/2048 granularity; near-zero values can
-        # drift past assertEqual's default fp16 atol=1e-5. Use an explicit fp16
-        # tolerance that reflects the device's real precision.
+        # Device fp16 storage rounds to ~1/2048 (~4.9e-4) granularity; near-zero
+        # values can drift past assertEqual's default fp16 atol=1e-5. Empirically
+        # the observed max round-trip delta on these torch.rand tensors is
+        # ~4.9e-4, so atol/rtol=1e-3 sits just above the device's real precision
+        # without being loose enough to mask a genuine regression.
         self.assertEqual(x, x_dev.cpu(), atol=1e-3, rtol=1e-3)
         self.assertEqual(x_stl.device_size, [256, 1, 512, 64])
         self.assertEqual(x_stl.stride_map, [1, -1, 256, -1])

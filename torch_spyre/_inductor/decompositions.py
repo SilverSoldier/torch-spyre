@@ -152,6 +152,10 @@ class _OPWrapper:
         from torch.utils import _pytree as pytree
 
         leaves = pytree.tree_leaves(args) + pytree.tree_leaves(kwargs)
+        # ``!=`` (not ``is not``) is deliberate: this compares the device *type*
+        # string against the ``DEVICE_NAME`` constant, and string equality is a
+        # value comparison. ``getattr(..., None)`` yields ``None`` for
+        # non-tensors, but the ``isinstance`` guard short-circuits those first.
         if any(
             isinstance(x, torch.Tensor)
             and getattr(x.device, "type", None) != DEVICE_NAME

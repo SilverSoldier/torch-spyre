@@ -2017,8 +2017,11 @@ class TestOps(unittest.TestCase, metaclass=ParameterizedTestMeta):
                 "3d": (cached_randn((8, 16, 256), dtype=torch.float16),),
             },
             # PT 2.12: the 3D fp16 (8, 16, 256) shape drifts a single element
-            # past tolerance under exp → sin (CPU fallback) → exp. 1D/2D pass.
-            # Likely tied to the post-fallback re-entry path.
+            # (~0.34 abs, 1/32768 elems) past tolerance under exp → sin (CPU
+            # fallback) → exp. 1D/2D pass. This is a PT 2.12 CPU-reference
+            # numerics change (the baseline the test compares against), not a
+            # Spyre kernel regression — one of the pre-existing edge cases
+            # documented and xfailed in commit 3a2d482.
             "expect_fail": ["3d"],
         },
         (

@@ -215,6 +215,12 @@ def spyre__copy_from(self, dst, non_blocking=False):
         # copy_from_d2d requires torch.compile, which cannot run inside
         # no_dispatch() (e.g. during FakeTensorMode constant propagation).
         # Fall back to a CPU roundtrip copy in that case.
+        #
+        # Detecting "am I inside no_dispatch()" uses the private
+        # ``torch._C._dispatch_tls_is_dispatch_key_excluded("Python")`` (no
+        # public predicate exists — no_dispatch() excludes the Python dispatch
+        # key). Revisit if upstream exposes a stable API; the alternative
+        # (attempt copy_from_d2d and catch the re-entrancy failure) is worse.
         if torch._C._dispatch_tls_is_dispatch_key_excluded("Python"):
             cpu_tmp = self.to("cpu")
             torch_spyre._C.copy_tensor(cpu_tmp, dst, non_blocking)

@@ -502,8 +502,9 @@ class ParameterizedTestMeta(type):
                         # op), so a single op can be marked without affecting the
                         # others sharing the shape.
                         op_case = f"{op_name}_{test_case}"
-                        if test_case in expect_fail or op_case in expect_fail:
-                            marked = op_case if op_case in expect_fail else test_case
+                        op_case_match = op_case in expect_fail
+                        if test_case in expect_fail or op_case_match:
+                            marked = op_case if op_case_match else test_case
                             namespace[test_name] = pytest.mark.xfail(
                                 reason=f"Expected fail for {marked}", strict=True
                             )(namespace[test_name])
