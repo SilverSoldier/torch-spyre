@@ -376,9 +376,9 @@ def decompose_addmm(graph: torch.fx.Graph) -> None:
 
     This pass undoes the re-fusion at FX time so the resulting ``mm``,
     ``mul`` and ``add`` nodes flow through the existing Spyre lowerings.
-    Any ``alpha`` / ``beta`` scalars become ``aten.mul.Scalar`` nodes that
-    ``convert_constant_with_graph_node`` (which runs after this pass)
-    rewrites into ``spyre.constant`` tensors.
+    Any ``alpha`` / ``beta`` scalars become ``aten.mul.Scalar`` nodes whose
+    scalar constants are later materialized into ``spyre.constant`` tensors by
+    the LoopLevel IR multi-ops pass (``split_multi_ops``).
     """
     for node in list(graph.nodes):
         if node.op != "call_function" or node.target is not aten.addmm.default:
@@ -430,97 +430,5 @@ def decompose_addmm(graph: torch.fx.Graph) -> None:
 
         node.replace_all_uses_with(replacement)
         graph.erase_node(node)
-
-    graph.lint()
-
-
-def convert_constant_with_graph_node(graph: torch.fx.Graph) -> None:
-    """
-    Replace constant arguments to any operation with spyre.constant node.
-    Scalar constants are converted to size=1 tensor and passed to the corresponding
-    operations which was consuming the scalar value at lowering.
-    Deduplication of identical constants happens later at the IR level via
-    dedup_and_promote_constants.
-
-    Both ``.Tensor`` and ``.Scalar`` overloads of the supported binary ops are
-    handled. For ``.Scalar`` overloads, the node is retargeted to the matching
-    ``.Tensor`` overload after the scalar argument is rewritten into a
-    ``spyre.constant`` tensor node.
-    """
-
-    # Map .Scalar overloads to their .Tensor counterparts. The .Tensor entries
-    # also map to themselves so the downstream rewrite is uniform. After the
-    # scalar arg is rewritten into a tensor node, an arithmetic ``.Scalar`` node
-    # must be retargeted to its ``.Tensor`` overload so its schema accepts the
-    # tensor argument.
-    scalar_to_tensor_overload = {
-        torch.ops.aten.add.Tensor: torch.ops.aten.add.Tensor,
-        torch.ops.aten.add.Scalar: torch.ops.aten.add.Tensor,
-        torch.ops.aten.sub.Tensor: torch.ops.aten.sub.Tensor,
-        torch.ops.aten.sub.Scalar: torch.ops.aten.sub.Tensor,
-        torch.ops.aten.mul.Tensor: torch.ops.aten.mul.Tensor,
-        torch.ops.aten.mul.Scalar: torch.ops.aten.mul.Tensor,
-        torch.ops.aten.true_divide.Tensor: torch.ops.aten.true_divide.Tensor,
-        torch.ops.aten.div.Tensor: torch.ops.aten.div.Tensor,
-        torch.ops.aten.div.Scalar: torch.ops.aten.div.Tensor,
-    }
-
-    # Comparison ops: promote the scalar constant to a tensor matching the
-    # operand dtype (the output stays bool), but do NOT retarget the overload.
-    # The Spyre lowering treats both args of a comparison uniformly, and
-    # aten.<cmp>.Tensor's meta kernel rejects a non-Tensor in the schema-checked
-    # path, so leaving the node on its original (.Scalar/.Tensor) overload with
-    # a tensor-producing constant node is what flows correctly to codegen.
-    comparison_ops = {
-        torch.ops.aten.eq.Tensor,
-        torch.ops.aten.eq.Scalar,
-        torch.ops.aten.ne.Tensor,
-        torch.ops.aten.ne.Scalar,
-        torch.ops.aten.ge.Tensor,
-        torch.ops.aten.ge.Scalar,
-        torch.ops.aten.gt.Tensor,
-        torch.ops.aten.gt.Scalar,
-        torch.ops.aten.le.Tensor,
-        torch.ops.aten.le.Scalar,
-        torch.ops.aten.lt.Tensor,
-        torch.ops.aten.lt.Scalar,
-    }
-
-    for node in graph.nodes:
-        if node.target not in scalar_to_tensor_overload and (
-            node.target not in comparison_ops
-        ):
-            continue
-        for idx, in_arg in enumerate(node.args):
-            if isinstance(in_arg, torch.fx.node.Node):
-                continue
-            if not isinstance(in_arg, (int, float)):
-                logger.warning(f"Warning: unhandled node type {type(in_arg)}")
-                continue
-            # Use the dtype of the tensor operand, not the output dtype.
-            # For comparison ops like eq, the output is bool but the constant
-            # must match the input tensor's dtype
-            dtype = torch.float16
-            for other_arg in node.args:
-                if isinstance(other_arg, torch.fx.node.Node):
-                    other_meta = other_arg.meta.get("tensor_meta", None)
-                    if other_meta is not None:
-                        dtype = other_meta.dtype
-                        break
-            with graph.inserting_before(node):
-                const_node = graph.create_node(
-                    "call_function",
-                    torch.ops.spyre.constant.default,
-                    (in_arg, dtype, torch.device("spyre")),
-                    {},
-                    "py_const",
-                    node.type,
-                )
-            copy_fx_custom_meta(node, const_node)
-            node.update_arg(idx, const_node)
-        # Retarget arithmetic .Scalar overloads to .Tensor now that the scalar
-        # arg is a tensor. Comparison ops keep their original overload (see above).
-        if node.target in scalar_to_tensor_overload:
-            node.target = scalar_to_tensor_overload[node.target]
 
     graph.lint()

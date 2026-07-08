@@ -218,10 +218,10 @@ class CustomPostPasses(_SpyreGraphPassPipeline):
             [
                 recover_spyre_hints,
                 # Undo the post-grad re-fusion of add(input, mm(a, b)) back into
-                # aten.addmm before constants are converted, so the resulting
-                # mul.Scalar alpha/beta nodes flow through
-                # convert_constant_with_graph_node and the mm flows through the
-                # Spyre lowerings instead of falling back to extern_kernels.addmm.
+                # aten.addmm, so the resulting mul.Scalar alpha/beta nodes (whose
+                # constants are materialized later by the LoopLevel IR multi-ops
+                # pass) and the mm flow through the Spyre lowerings instead of
+                # falling back to extern_kernels.addmm.
                 decompose_addmm,
                 mm_to_bmm_pass.apply,
                 mark_direct_unit_bmm_pass,
