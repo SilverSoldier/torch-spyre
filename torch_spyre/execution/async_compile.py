@@ -14,7 +14,6 @@
 
 import tempfile
 from collections.abc import Sequence
-from typing import Any
 import os
 import subprocess
 import torch
@@ -42,8 +41,26 @@ def get_output_dir(kernel_name: str):
 
 
 class SpyreAsyncCompile(AsyncCompile):
-    def __init__(self) -> None:
-        pass
+    """Spyre kernel compilation (`sdsc`), plus the upstream AsyncCompile.
+
+    A graph mixing Spyre and CPU work emits `async_compile.cpp_pybinding(...)`
+    against this same object, so we inherit AsyncCompile for `cpp_pybinding`/
+    `wait` rather than stubbing them -- a no-op `wait()` alone can't compile a
+    CPU kernel it was never given.
+
+    """
+
+    def triton(self, *args, **kwargs):
+        raise NotImplementedError(
+            "SpyreAsyncCompile does not support Triton kernels; only "
+            "cpp_pybinding (CPU) and sdsc (Spyre) are validated."
+        )
+
+    def cpp(self, *args, **kwargs):
+        raise NotImplementedError(
+            "SpyreAsyncCompile does not support the cpp() path; CPU kernels "
+            "go through cpp_pybinding (cpu_backend='cpp')."
+        )
 
     def sdsc(
         self, kernel_name: str, specs: Sequence[OpSpec | LoopSpec | UnimplementedOp]
@@ -64,6 +81,3 @@ class SpyreAsyncCompile(AsyncCompile):
             subprocess.run(["dxp_standalone", "-d", output_dir], check=True)
 
         return SpyreSDSCKernelRunner(kernel_name, output_dir)
-
-    def wait(self, scope: dict[str, Any]) -> None:
-        super().wait(scope)
